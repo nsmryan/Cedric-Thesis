@@ -238,7 +238,7 @@ def avgSpeedByTreatment():
 
 def toRefined(vals):
   floats = [float(val) for val in vals[0:-1]]
-  location = vals[-1]
+  location = vals[-1].strip()
   return Crayfish(floats[0], floats[1], floats[2], floats[3], floats[4], floats[5], floats[6], floats[7], floats[8], location)
 
 def retrieveData(trial, session, crayfish):
@@ -480,15 +480,25 @@ def percentMiddle(samples):
 
   numMiddle = 0
   for sample in samples:
-    if sample.location == "middle":
+    if "middle" in sample.location:
       numMiddle += 1
 
   return numMiddle / numSamples
 
+def averageSpeedLocation(locationName):
+  def averageSpeedNamed(samples):
+    filteredSamples = [sample for sample in samples if sample.location == locationName]
+    return safeAverage([sample.speed for sample in filteredSamples])
+
+  return averageSpeedNamed
 
 if __name__ == "__main__":
-  processInSegments("AverageSpeed", "Time", "AverageSpeed", 60, averageOverList)
-  processInSegments("Location", "Time", "Location", 60, percentMiddle)
-  distanceTraveledAllCrayfish()
-  processFullSessions("AverageSpeed", "Crayfish ID", "AverageSpeed", averageOverList)
-  processInSegments("PercentStill", "Time", "PercentStill", 60, percentStill)
+  #processInSegments("AverageSpeed", "Time", "AverageSpeed", 60, averageOverList)
+  #processInSegments("Location", "Time", "Location", 60, percentMiddle)
+  #processFullSessions("LocationFull", "Crayfish ID", "Location", percentMiddle)
+  #distanceTraveledAllCrayfish()
+  #processFullSessions("AverageSpeedFull", "Crayfish ID", "AverageSpeed", averageOverList)
+  processFullSessions("AverageSpeedMid",    "Crayfish ID", "AverageSpeed", averageSpeedLocation("middle"))
+  processFullSessions("AverageSpeedEdge",   "Crayfish ID", "AverageSpeed", averageSpeedLocation("edge"))
+  processFullSessions("AverageSpeedCorner", "Crayfish ID", "AverageSpeed", averageSpeedLocation("corner"))
+  #processInSegments("PercentStill", "Time", "PercentStill", 60, percentStill)
