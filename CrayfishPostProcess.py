@@ -3,8 +3,9 @@ import os
 import math
 from matplotlib import pyplot as plt
 from CrayfishLib import *
+import sys
 
-def processSession(session):
+def sessionGraphs(session):
   """ Main processing function. This function processes one recording session """
   palette = ['#db5e0c', '#14660d', '#460C67', '#d40607', '#cb971a', '#0c5b67']
   plt.rc('axes', color_cycle = palette)
@@ -65,14 +66,14 @@ def velOverTime(session):
 
 def plotVelocities(figure, index, crayfishes):
   subplot = figure.add_subplot(6, 1, index)
-  ms  = [crayfish.ms   for crayfish in crayfishes]
+  time  = [crayfish.time   for crayfish in crayfishes]
   xvs = [crayfish.xVel for crayfish in crayfishes]
   yvs = [crayfish.yVel for crayfish in crayfishes]
   speeds = [crayfish.speed for crayfish in crayfishes]
-  plt.plot(ms, speeds)
+  plt.plot(time, speeds)
   plt.xlabel("Time (seconds)")
   plt.ylabel("Speed (cm/second)")
-  plt.title("Speed of crayfish " + str(index))
+  plt.title("Speed of crayfish " + str(index+1))
 
 
 def volumeOverTime(session):
@@ -91,12 +92,12 @@ def volumeOverTime(session):
 
 def plotVolume(figure, index, crayfishes):
   subplot = figure.add_subplot(6, 1, index)
-  ms  = [crayfish.ms   for crayfish in crayfishes]
+  time  = [crayfish.time   for crayfish in crayfishes]
   volumes = [crayfish.volume for crayfish in crayfishes]
-  plt.plot(ms, volumes)
+  plt.plot(time, volumes)
   plt.xlabel("Time (seconds)")
   plt.ylabel("Volume (cm/second)")
-  plt.title("Volume of crayfish " + str(index))
+  plt.title("Volume of crayfish " + str(index+1))
 
 def velHist(session, noZeros):
   """ create a histogram of the speed of all the crayfish in a recording session """
@@ -118,7 +119,7 @@ def velHist(session, noZeros):
 
 def plotVelHist(noZeros, figure, index, crayfishes):
   subplot = figure.add_subplot(6, 1, index)
-  ms = [crayfish.ms for crayfish in crayfishes]
+  time = [crayfish.time for crayfish in crayfishes]
   speeds = [crayfish.speed for crayfish in crayfishes]
   if noZeros: speeds = [speed for speed in speeds if speed > speedThreshold]
 
@@ -128,7 +129,7 @@ def plotVelHist(noZeros, figure, index, crayfishes):
   plt.hist(speeds, bins)
   plt.xlabel("Speed")
   plt.ylabel("Frequency")
-  plt.title("Speed Frequency for crayfish " + str(index))
+  plt.title("Speed Frequency for crayfish " + str(index+1))
 
 def xyOverTime(session):
   """ create a graph of the x position a y position for each crayfish for each recording session """
@@ -156,19 +157,19 @@ def plotXYs(session, index, samples):
   subplotX = plt.subplot2grid((6, 2), (index, 0))
   subplotY = plt.subplot2grid((6, 2), (index, 1))
 
-  ms  = [sample.ms for sample in samples]
+  time  = [sample.time for sample in samples]
   xs = [sample.x for sample in samples]
   ys = [sample.y for sample in samples]
 
-  subplotX.set_title("X Position of " + str(index))
+  subplotX.set_title("X Position of " + str(index+1))
   subplotX.set_xlabel("X Position")
   subplotX.set_ylabel("Time (seconds)")
-  subplotX.plot(ms, xs)
+  subplotX.plot(time, xs)
 
-  subplotY.set_title("Y Position of " + str(index))
+  subplotY.set_title("Y Position of " + str(index+1))
   subplotY.set_xlabel("Y Position)")
   subplotY.set_ylabel("Time (seconds)")
-  subplotY.plot(ms, ys)
+  subplotY.plot(time, ys)
 
 def xyMovement(session):
   """ create a plot of the positions of all the crayfish in a recording session """
@@ -190,8 +191,8 @@ def plotMovement(index, samples, lineStyle):
   xs = [sample.x for sample in samples]
   ys = [sample.y for sample in samples]
   plt.plot(xs, ys, lineStyle)
-  plt.xlabel("X position for crayfish " + str(index))
-  plt.ylabel("Y position for crayfish " + str(index))
+  plt.xlabel("X position for crayfish " + str(index+1))
+  plt.ylabel("Y position for crayfish " + str(index+1))
 
 def outputPath(trialName):
   """ This is a utility function for creating file names from session data """
@@ -245,8 +246,6 @@ def retrieveData(trial, session, crayfish):
   path = ".\\output\\" + trial + "\\"
   dataFiles = [name for name in os.listdir(path) if (session + "_") in name and ("_" + str(crayfish)) in name]
 
-  print("retrieveData filenames = " + str(dataFiles))
-
   fileName = dataFiles[0]
 
   lines = list(open(path + fileName, 'r').read().split('\n'))
@@ -279,6 +278,27 @@ def plotOverTime(trial, session, crayfish, name, xLabel, yLabel, xys):
     plt.close(fig)
     plt.clf()
 
+def recordingSessionLengths():
+  outFileName = "recordingTime"
+  shortestRecordingTime = 100000000
+
+  for sessionName in sessionNames:
+    recordingTimeFile = open(outFileName + "_" + sessionName + ".txt", 'w')
+    recordingTimeFile.write("Trial-CrayfishID, Samples, Recording Time (seconds)" + "\n")
+
+    for trialName in trialNames:
+      crayfishIndex = 1
+      for crayfishIndex in range(0, numCrayfish):
+        refinedData = retrieveData(trialName, sessionName, crayfishIndex)
+        identifier = trialName + "-" + str(crayfishIndex+1)
+        recordingTime = refinedData[-1].time
+        shortestRecordingTime = min(shortestRecordingTime, recordingTime)
+        outLine = ",".join([identifier, str(len(refinedData)), str(recordingTime)])
+
+        recordingTimeFile.write(outLine + "\n")
+
+  return shortestRecordingTime
+
 def processInSegments(name, xLabel, yLabel, timeSegment, collapse):
   outDirectory = outDir + "\\" + name + "_" + str(timeSegment) + "\\"
   ensureDir(outDirectory)
@@ -296,19 +316,19 @@ def processInSegments(name, xLabel, yLabel, timeSegment, collapse):
       for crayfishIndex in range(0, numCrayfish):
         crayfishMeasures = []
         if (trialName, sessionName, crayfishIndex) in ignoreCrayfish:
-          print("Ignoring " + trialName + " " + sessionName + " " + str(crayfishIndex) + "\n")
+          print("Ignoring " + trialName + " " + sessionName + " " + str(crayfishIndex+1) + "\n")
           continue
 
-        headerText = "Processing " + trialName + " " + sessionName + " " + str(crayfishIndex) + "\n"
+        headerText = "Processing " + trialName + " " + sessionName + " " + str(crayfishIndex+1) + "\n"
         print(headerText)
 
         refinedData = retrieveData(trialName, sessionName, crayfishIndex)
-        endTime = max([sample.ms for sample in refinedData])
+        endTime = max([sample.time for sample in refinedData])
         numBuckets = int(endTime / timeSegment) + 1
         sampleList = []
         [sampleList.append([]) for i in range(0, numBuckets)]
         for sample in refinedData:
-          index = int(sample.ms/timeSegment)
+          index = int(sample.time/timeSegment)
           sampleSummary = sample
           sampleList[index].append(sampleSummary)
 
@@ -326,7 +346,7 @@ def processInSegments(name, xLabel, yLabel, timeSegment, collapse):
 
           treatmentStr = "t_" + str(trialTreatments[trialName])
           timeStr = str(index)
-          trialNameStr = trialName + "_" + str(crayfishIndex)
+          trialNameStr = trialName + "_" + str(crayfishIndex+1)
           segmentSummaryStr = str(segmentSummary) 
           allDataOutFile.write(treatmentStr + ", " + timeStr + ", " + trialNameStr + ", " + segmentSummaryStr + "\n")
           crayfishMeasures.append(segmentSummary)
@@ -341,9 +361,9 @@ def processInSegments(name, xLabel, yLabel, timeSegment, collapse):
         trialOutFile.write(", ".join(map(str, measures)))
         trialOutFile.write("\n")
 
-def processFullSessions(name, xLabel, yLabel, collapse):
+def processOverAllSessions(name, xLabel, yLabel, collapse):
   outputDirectory = outDir + "\\" + name
-  outFileName =  outputDirectory + "\\" + name + "_full"
+  outFileName =  outputDirectory + "\\" + name + "_OverAll"
   ensureDir(outputDirectory)
 
   measures = []
@@ -359,17 +379,17 @@ def processFullSessions(name, xLabel, yLabel, collapse):
 
       for crayfishIndex in range(0, numCrayfish):
         if (trialName, sessionName, crayfishIndex) in ignoreCrayfish:
-          print("Ignoring " + trialName + " " + sessionName + " " + str(crayfishIndex) + "\n")
+          print("Ignoring " + trialName + " " + sessionName + " " + str(crayfishIndex+1) + "\n")
           continue
 
-        headerText = "Processing " + trialName + " " + sessionName + " " + str(crayfishIndex) + "\n"
+        headerText = "Processing " + trialName + " " + sessionName + " " + str(crayfishIndex+1) + "\n"
         print(headerText)
 
         refinedData = retrieveData(trialName, sessionName, crayfishIndex)
         crayfishSummary = collapse(refinedData)
         #TODO match up with an id for the plot
-        measures.append((str(trialName) + str(crayfishIndex), crayfishSummary))
-        outFile.write("t_" + str(trialTreatments[trialName]) + ", " + trialName + "_" + str(crayfishIndex) + ", " + str(crayfishSummary) + "\n")
+        measures.append((str(trialName) + str(crayfishIndex+1), crayfishSummary))
+        outFile.write("t_" + str(trialTreatments[trialName]) + ", " + trialName + "_" + str(crayfishIndex+1) + ", " + str(crayfishSummary) + "\n")
     #plot all values with their id
 
   plt.bar(range(len(measures)), [measure[1] for measure in measures], align="center")
@@ -406,19 +426,19 @@ def distanceTraveledAllCrayfish():
     for trialName in trialNames:
       for crayfishIndex in range(0, numCrayfish):
         if (trialName, sessionName, crayfishIndex) in ignoreCrayfish:
-          print("Ignoring " + trialName + " " + sessionName + " " + str(crayfishIndex) + "\n")
+          print("Ignoring " + trialName + " " + sessionName + " " + str(crayfishIndex+1) + "\n")
           continue
 
-        progressText = "Processing " + trialName + " " + sessionName + " " + str(crayfishIndex) + "\n"
+        progressText = "Processing " + trialName + " " + sessionName + " " + str(crayfishIndex+1) + "\n"
         print(progressText)
 
         refinedData = retrieveData(trialName, sessionName, crayfishIndex)
 
         totalDistance = calCTotalDistance(refinedData)
-        distMap[str(trialTreatments[trialName])].append(totalDistance)
+        distMap[trialTreatments[trialName]].append(totalDistance)
         allDistances.append((trialName, crayfishIndex, totalDistance))
 
-        outFile.write("t_" + str(trialTreatments[trialName]) + ", " + trialName + "_" + str(crayfishIndex) + ", " + str(totalDistance) + "\n")
+        outFile.write("t_" + str(trialTreatments[trialName]) + ", " + trialName + "_" + str(crayfishIndex+1) + ", " + str(totalDistance) + "\n")
 
   #create bar chart with total distance by treatment
   fig = plt.figure(1)
@@ -492,13 +512,188 @@ def averageSpeedLocation(locationName):
 
   return averageSpeedNamed
 
-if __name__ == "__main__":
+def makeDataSets(fileName, f, proj, timeCutoff = 1000000000):
+  outDir = "datasets\\"
+  outPath = outDir + fileName
+  ensureDir(outDir)
+
+  for sessionName in sessionNames:
+    outFile = open(outPath + "_" + sessionName + ".csv", 'w')
+    header = "crayfish index (0.0), 0.0, crayfish index (0.5), 0.5, crayfish index (5.0), 5.0, crayfish index (50.0), 50.0\n"
+    outFile.write(header)
+
+    allData = []
+    for treatmentName in treatmentNames:
+      treatmentData = []
+      crayfishIdentifiers = []
+      population = []
+
+      for trialName in treatmentTrials[treatmentName]:
+        trialData = []
+        if trialName in ignoreTrials:
+            print("Ignoring " + trialName + "\n")
+            continue
+
+        for crayfishIndex in range(0, numCrayfish):
+          if (trialName, sessionName, crayfishIndex) in ignoreCrayfish:
+            print("Ignoring " + trialName + " " + sessionName + " " + str(crayfishIndex+1) + "\n")
+            continue
+
+          refinedData = retrieveData(trialName, sessionName, crayfishIndex)
+          extracted = proj(refinedData)
+          val = f(extracted)
+          trialData.append(val)
+          population += extracted
+        identifiers = [trialName + "-" + str(ix) for ix in indexRange]
+        crayfishIdentifiers += identifiers
+        treatmentData += trialData
+
+      treatmentData.append(numpy.std(population))
+      crayfishIdentifiers.append("stdev")
+      allData.append(crayfishIdentifiers)
+      allData.append(treatmentData)
+
+    transposedData = transpose(allData)
+    fileData = transposedData # [joinLists(lls) for lls in transposedData]
+    for row in fileData:
+      outFile.write((",".join(map(str, row))) + "\n")
+
+def makeLocationDataSets(fileName, f):
+  outDir = "datasets\\"
+  outPath = outDir + fileName
+  ensureDir(outDir)
+
+  sessionData = []
+
+  for sessionName in sessionNames:
+    outFile = open(outPath + "_" + sessionName + ".csv", 'w')
+    header = "0.0, 0.5, 5.0, 50.0\n"
+    outFile.write(header)
+
+    for location in locationNames:
+      treatmentData = []
+      for treatmentName in treatmentNames:
+        crayfishData = []
+        for trialName in treatmentTrials[treatmentName]:
+          for crayfishIndex in range(0, numCrayfish):
+            refinedData = retrieveData(trialName, sessionName, crayfishIndex)
+            val = f(location, refinedData)
+            crayfishData.append(val)
+        treatmentData.append(safeAverage(crayfishData))
+
+      outFile.write(location + ", " + (",".join(map(str, treatmentData))) + "\n")
+
+def filterByLocation(location, dataSet):
+  return list(filter(lambda sample : sample.location == location, dataSet))
+
+def avgSpeedLocation(location, crayfishData):
+  return averageOverList(filterByLocation(location, crayfishData))
+
+def totalDistLocation(location, crayfishData):
+  return calCTotalDistance(filterByLocation(location, crayfishData))
+
+def timeSpentLocation(location, crayfishData):
+  numSamples = len(crayfishData)
+
+  if numSamples == 0:
+    return 0
+
+  numMiddle = 0
+  for sample in crayfishData:
+    if location in sample.location:
+      numMiddle += 1
+
+  return numMiddle / numSamples
+
+def averageTimePaused(location, samples):
+  prevSample = samples[0]
+  timePaused = 0
+  pausing = False
+  pausedTimeList = []
+
+  for sample in samples[1:]:
+    if location == "all" or sample.location == location:
+      if sampleDist(prevSample, sample) < 5:
+        pausing = True
+        timePaused += sampleTimePassed(prevSample, sample)
+      else:
+        pausing = False
+        if timePaused != 0:
+          pausedTimeList.append(timePaused)
+        timePaused = 0
+    prevSample = sample
+
+  #in case the crayfish ended the session pausing
+  if timePaused != 0: 
+    pausedTimeList.append(timePaused)
+
+  return safeAverage(pausedTimeList)
+
+
+def averageTimePausedLocation(location):
+  def timePausedFunction(samples):
+    return averageTimePaused(location, samples)
+  return timePausedFunction
+
+def totalDistanceLocation(location):
+  def totalDistance(samples):
+    totalDistance = 0
+    prevSample = samples[0]
+    for sample in samples[1:]:
+      if location == "all" or (sample.location == location and prevSample.location == location):
+        totalDistance += sampleDist(prevSample, sample)
+      prevSample = sample
+    return totalDistance
+  return totalDistance
+
+def getSpeeds(samples):
+  return [sample.speed for sample in samples]
+
+def getDistances(samples):
+  return [sum([sampleDist(sample0, sample1) for (sample0, sample1) in zip(samples[0:-1], samples[1:])])]
+
+def postprocess():
+  #Data sets for R statistics
+
   #processInSegments("AverageSpeed", "Time", "AverageSpeed", 60, averageOverList)
   #processInSegments("Location", "Time", "Location", 60, percentMiddle)
-  #processFullSessions("LocationFull", "Crayfish ID", "Location", percentMiddle)
+  #processOverAll("LocationOverAll", "Crayfish ID", "Location", percentMiddle)
+  
+  #Average Time Paused
+  #processOverAllSessions("AvgTimePausedOverAll",   "Crayfish ID", "AverageTimePaused", averageTimePausedLocation("all"))
+  #processOverAllSessions("AvgTimePausedMiddle", "Crayfish ID", "AverageTimePaused", averageTimePausedLocation("middle"))
+  #processOverAllSessions("AvgTimePausedEdge",   "Crayfish ID", "AverageTimePaused", averageTimePausedLocation("edge"))
+  #processOverAllSessions("AvgTimePausedCorner", "Crayfish ID", "AverageTimePaused", averageTimePausedLocation("corner"))
+
   #distanceTraveledAllCrayfish()
-  #processFullSessions("AverageSpeedFull", "Crayfish ID", "AverageSpeed", averageOverList)
-  processFullSessions("AverageSpeedMid",    "Crayfish ID", "AverageSpeed", averageSpeedLocation("middle"))
-  processFullSessions("AverageSpeedEdge",   "Crayfish ID", "AverageSpeed", averageSpeedLocation("edge"))
-  processFullSessions("AverageSpeedCorner", "Crayfish ID", "AverageSpeed", averageSpeedLocation("corner"))
+
+  #Average Speed
+  #processOverAllSessions("AverageSpeedOverAll", "Crayfish ID", "AverageSpeed", averageOverList)
+  #processOverAllSessions("AverageSpeedMid",    "Crayfish ID", "AverageSpeed", averageSpeedLocation("middle"))
+  #processOverAllSessions("AverageSpeedEdge",   "Crayfish ID", "AverageSpeed", averageSpeedLocation("edge"))
+  #processOverAllSessions("AverageSpeedCorner", "Crayfish ID", "AverageSpeed", averageSpeedLocation("corner"))
+
   #processInSegments("PercentStill", "Time", "PercentStill", 60, percentStill)
+
+  #processOverAllSessions("TotalDistAll",    "Crayfish ID", "TotalDistance", totalDistanceLocation("all"))
+  #processOverAllSessions("TotalDistMid",    "Crayfish ID", "TotalDistance", totalDistanceLocation("middle"))
+  #processOverAllSessions("TotalDistEdge",   "Crayfish ID", "TotalDistance", totalDistanceLocation("edge"))
+  #processOverAllSessions("TotalDistCorner", "Crayfish ID", "TotalDistance", totalDistanceLocation("corner"))
+
+  # Full data set summary
+  shortestRecordingTime = recordingSessionLengths()
+
+  #Data sets for graphing
+  makeDataSets("avgSpeed",  safeAverage, getSpeeds)
+  makeDataSets("totalDist", sum, getDistances, shortestRecordingTime)
+  #makeDataSets("averageTimePaused", averageTimePaused("all"))
+
+  #makeLocationDataSets("avgSpeedLocation", avgSpeedLocation)
+  #makeLocationDataSets("totalDistLocation", totalDistLocation)
+  #makeLocationDataSets("timeSpent", timeSpentLocation)
+  #TODO
+  #makeIncrementDataSets("timeSpent", 60,   timeSpentLocation)
+  #makeIncrementDataSets("timeSpent", 60*5, timeSpentLocation)
+
+if __name__ == "__main__":
+  postprocess()

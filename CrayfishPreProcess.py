@@ -3,8 +3,10 @@ import string
 import math
 import numpy
 import collections
+import sys
 
 from CrayfishLib import *
+from CrayfishPostProcess import *
 
 
 def ingest(inFile):
@@ -48,16 +50,19 @@ def parseDataSet(trial, stage, rawData):
     #crayfishes = map(lambda crayfish : filter(lambda sample : sample != None, crayfish), crayfishes)
     crayfishes = [[sample for sample in samples if sample != None] for samples in crayfishes]
 
+    #reindex data to use Cedric's indexing scheme
+    reindex(crayfishes)
+
     return crayfishes
 
 def parseLine(trial, stage, line):
     """ break out the contents of a single row of a raw data file """
-    ms = float(line.pop(0))/1000
-    crayfish = [parseCrayFish(trial, stage, i, ms, line[i*numFields:(i+1)*numFields])
+    time = float(line.pop(0))/1000
+    crayfish = [parseCrayFish(trial, stage, i, time, line[i*numFields:(i+1)*numFields])
                 for i in range(0, numCrayfish)]
     return crayfish
 
-def parseCrayFish(trial, stage, index, ms, line):
+def parseCrayFish(trial, stage, index, time, line):
     """ break out the contents of a single crayfish's data for a row """
     [x, y, crayfishID, rotation, height, width] = line[0:numFields]
 
@@ -66,7 +71,7 @@ def parseCrayFish(trial, stage, index, ms, line):
         return None
 
     # create an object to store the data for one crayfish for one sample
-    return RawSample(ms,
+    return RawSample(time,
                      index,
                      trial,
                      stage,
@@ -94,7 +99,7 @@ def refineDataSet(summaryFile, dataset):
 
     prevX = rawSamples[0].x
     prevY = rawSamples[0].y
-    prevMS = rawSamples[0].ms
+    prevTime = rawSamples[0].time
 
     index = rawSamples[0].index
     trial = rawSamples[0].trial
@@ -122,9 +127,9 @@ def refineDataSet(summaryFile, dataset):
         raw.y = None
         continue
 
-      msDiff = raw.ms - prevMS
-      if msDiff > 0 and runFiltering:
-        if (abs(raw.x - prevX) / msDiff) > speedCap or (abs(raw.y - prevY) / msDiff) > speedCap:
+      timeDiff = raw.time - prevTime
+      if timeDiff > 0 and runFiltering:
+        if (abs(raw.x - prevX) / timeDiff) > speedCap or (abs(raw.y - prevY) / timeDiff) > speedCap:
           totalLost += 1
           tooFastLost += 1
           raw.x = prevX
@@ -149,17 +154,17 @@ def refineDataSet(summaryFile, dataset):
       if runFiltering: raw.x = safeAverage(windowX)
       if runFiltering: raw.y = safeAverage(windowY)
 
-    timeCap = min(timeCap, raw.ms)
+    timeCap = min(timeCap, raw.time)
     
     rawSamples = [sample for sample in rawSamples if sample.x != None]
 
-    ms = [raw.ms for raw in  rawSamples]
+    time = [raw.time for raw in  rawSamples]
     xs = [raw.x for raw in  rawSamples]
     ys = [raw.y for raw in  rawSamples]
-    vxs = [diff(*quad) for quad in zip(xs, xs[1:], ms, ms[1:])]
-    vys = [diff(*quad) for quad in zip(ys, ys[1:], ms, ms[1:])]
+    vxs = [diff(*quad) for quad in zip(xs, xs[1:], time, time[1:])]
+    vys = [diff(*quad) for quad in zip(ys, ys[1:], time, time[1:])]
     moveAmounts = [dist(*quad) for quad in zip(xs, xs[1:], ys, ys[1:])]
-    prevMS = ms[0]
+    prevTime = time[0]
     totalSamples = len(rawSamples)
     sp = 0
     prevX = rawSamples[0].x
@@ -171,14 +176,17 @@ def refineDataSet(summaryFile, dataset):
       raw.y *= camera.pixelDims[1]
       raw.width *= mmPerPixelX
       raw.height *= mmPerPixelY
-      if raw.ms != prevMS:
-        sp = (dist(raw.x, raw.y, prevX, prevY) / (raw.ms-prevMS))
+      if raw.time != prevTime:
+        sp = (dist(raw.x, raw.y, prevX, prevY) / (raw.time-prevTime))
       else:
         sp = 0
 
-      prevMS = raw.ms
+      if sp > speedCapMM:
+        continue
 
-      crayfish = Crayfish(raw.ms, raw.x, raw.y, vx, vy, raw.rotation, raw.height, raw.width, sp, location)
+      prevTime = raw.time
+
+      crayfish = Crayfish(raw.time, raw.x, raw.y, vx, vy, raw.rotation, raw.height, raw.width, sp, location)
       refinedSamples.append(crayfish)
       prevX = raw.x
       prevY = raw.y
@@ -201,7 +209,7 @@ def refineDataSet(summaryFile, dataset):
 def crayfishCSV(crayfish):
     """ Turn a crayfish's data into CVS output """
     sp = math.sqrt(crayfish.xVel*crayfish.xVel + crayfish.yVel*crayfish.yVel)
-    formatParams = [crayfish.ms, crayfish.x, crayfish.y, crayfish.xVel, crayfish.yVel, sp, crayfish.rotation, crayfish.height, crayfish.width]
+    formatParams = [crayfish.time, crayfish.x, crayfish.y, crayfish.xVel, crayfish.yVel, sp, crayfish.rotation, crayfish.height, crayfish.width]
     return "{: 5.3f},  {: 5.3f},  {: 5.3f},  {: 5.3f},  {: 5.3f},  {: 5.3f},  {: 5.3f},  {: 5.3f},  {: 5.3f}".format(*formatParams) + ", " + crayfish.location
 
 def outgest(session):
@@ -246,3 +254,85 @@ def allFiles(dir):
               fileList += [(subfolder, fileName) for fileName in files]
   return fileList
 
+def processExperiment(trialsToRun, stagesToRun):
+    """ This is the main function for the whole program. Start here """
+
+    print("Starting Processing")
+
+    if len(sys.argv) > 1:
+      trialsToRun = [sys.argv[1]]
+    else:
+      trialsToRun = trialNames
+
+    if len(sys.argv) > 2:
+      stagesToRun = [sys.argv[2]]
+    else:
+      stagesToRun = "abc"
+
+    if len(sys.argv) > 3:
+      profiling = [sys.argv[3]]
+
+    # Ensure the output directory exists
+    ensureDir(outDir)
+
+    # find all data files to process
+    files = allFiles(inDir)
+
+    dataSummaryFile = open("summary.txt", 'w')
+
+    # for each file: read the file, clean up the data, create some records, and create graphs
+    for (trialName, sessionName) in files:
+        if trialName not in trialsToRun:continue
+
+        if getStage(sessionName) not in stagesToRun:continue
+
+        print("Processing " + trialName + ", " + sessionName)
+
+        filePath = trialName + "\\" + sessionName
+
+
+        # for each session (1 file)
+        with open(inDir + "\\" + filePath, 'r') as inFile:
+            # read from the file
+            rawData = ingest(inFile)
+
+            trialOutPath = outDir + "\\" + trialName
+            trialOutFile = trialOutPath + "\\" + sessionName
+
+            # ensure that there is a directory to record results in
+            if not os.path.exists(trialOutPath): os.makedirs(trialOutPath)
+
+            # open the file and perform processing
+            with open(trialOutFile, 'w') as outFile:
+                # break the data into records
+                dataset = parseDataSet(trialName, getStage(sessionName), rawData)
+
+                # create nicer data
+                crayfishes = refineDataSet(dataSummaryFile, dataset)
+
+                # perform the main processing
+                session = Session(trialName, sessionName, crayfishes)
+
+                #save session data to the trial it is associated with
+                trials[trialName].append(sessionStats(session))
+
+                if graphing:
+                  sessionGraphs(session)
+
+                #save the resulting cleaned-up data to a file 
+                outgest(session)
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1:
+      trialsToRun = [sys.argv[1]]
+    else:
+      trialsToRun = ["Trial 1", "Trial 2", "Trial 3", "Trial 4",
+                     "Trial 5", "Trial 6", "Trial 7", "Trial 8",
+                     "Trial 9", "Trial 10", "Trial 11", "Trial 12"]
+
+    if len(sys.argv) > 2:
+      stagesToRun = [sys.argv[2]]
+    else:
+      stagesToRun = "abc"
+
+    processExperiment(trialsToRun, stagesToRun)

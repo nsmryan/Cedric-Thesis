@@ -5,6 +5,9 @@ from enum import Enum
 outDir = "output"
 inDir = "input"
 
+ignoreTrials = []
+ignoreCrayfish = []
+
 runFiltering = True
 
 numColumns = 37 # ms plus 6 records of 6 fields each
@@ -13,7 +16,7 @@ numFields = 6 # 6 fields per crayfish
 
 numCrayfish = 6 # 6 crayfish per dataset
 
-crayfishHeader = "time (seconds), x, y, x velocity, y velocity, speed, rotation, length, width, location\n"
+crayfishHeader = "time (seconds), x (mm), y (mm), x velocity (mm/second), y velocity (mm/second), speed (mm/second), rotation (degrees), length (mm), width (mm), location\n"
 
 #the trial name is part of the crayfish id
 anovaHeader = "treatment, time, crayfishid, " # add on name of numerical attribute at end
@@ -34,6 +37,13 @@ yJitter = 2
 speedCap = 100000
 
 filterWindow = 5
+
+graphing = False
+
+speedCapMM = 70
+
+cedricIndices = [0, 2, 4, 1, 3, 5]
+indexRange = range(1, 7)
 
 # a box holding one crayfish
 class Box:
@@ -78,14 +88,14 @@ class Camera:
 
 # a sample from the raw data
 class Sample:
-    def __init__(self, ms, crayfish):
-      self.ms = ms
+    def __init__(self, time, crayfish):
+      self.time = time
       self.crayfish = crayfish
 
 # a crayfish's raw data sample
 class RawSample:
-    def __init__(self, ms, index, trial, stage, xPos, yPos, rotation, height, width):
-        self.ms = ms
+    def __init__(self, time, index, trial, stage, xPos, yPos, rotation, height, width):
+        self.time = time
         self.index = index
         self.trial = trial
         self.stage = stage
@@ -97,8 +107,8 @@ class RawSample:
 
 # a crayfishes cleaned-up data sample
 class Crayfish:
-    def __init__(self, ms, xPos, yPos, xVel, yVel, rotation, height, width, speed, location):
-        self.ms = ms
+    def __init__(self, time, xPos, yPos, xVel, yVel, rotation, height, width, speed, location):
+        self.time = time
         self.x = xPos
         self.y = yPos
         self.xVel = xVel
@@ -151,6 +161,9 @@ def dervs(vs, times):
 def sampleDist(sampleA, sampleB):
   return dist(sampleA.x, sampleA.y, sampleB.x, sampleB.y)
 
+def sampleTimePassed(sample0, sample1):
+  return (sample1.time - sample0.time)
+
 def dist(a, b, aprime, bprime):
   return math.sqrt(pow(a - aprime, 2) + pow(b - bprime, 2))
 
@@ -167,6 +180,22 @@ def ensureDir(dirName):
 def safeAverage(nums):
   if len(nums) == 0:return 0
   return sum(nums)/len(nums)
+
+def joinLists(lls):
+  l = []
+  for ls in lls:
+    l = l + ls
+  return l
+
+def interlace(first, second):
+  l = []
+  for pair in zip(first, second):
+    l.append(pair[0])
+    l.append(pair[1])
+  return l
+
+def reindex(ls):
+  return [ls[ix] for ix in cedricIndices]
 
 # from the original Java program...
 # for session a always use camera 1
@@ -266,9 +295,9 @@ crayfishMothers = {"Trial 1"  : [5, 5, 5, 5,  5,  5],
                    "Trial 12" : [8, 8, 8, 11, 11, 11]}
 
 # Treatment levels, as a dictionary
-treatments = {"0.0" : [], "0.5" : [], "5.0" : [], "50.0" : []}
+treatments = {0.0 : [], 0.5 : [], 5.0 : [], 50.0 : []}
 
-treatmentNames = ["0.0", "0.5", "5.0", "50.0"]
+treatmentNames = [0.0, 0.5, 5.0, 50.0]
 trialNames  = ["Trial 1", "Trial 2", "Trial 3", "Trial 4", "Trial 5", "Trial 6", "Trial 7", "Trial 8", "Trial 9", "Trial 10", "Trial 11", "Trial 12"]
 sessionNames = ['a', 'b', 'c']
 
@@ -298,6 +327,12 @@ trialTreatments = {"Trial 1"  : 0.0,
                    "Trial 11" : 50.0,
                    "Trial 12" : 5.0}
 
+treatmentTrials = {0.0  : ["Trial 1", "Trial 5", "Trial 10"],
+                   0.5  : ["Trial 2", "Trial 8", "Trial 9"],
+                   5.0  : ["Trial 3", "Trial 6", "Trial 12"],
+                   50.0 : ["Trial 4", "Trial 7", "Trial 11"]}
+                   
+
 cleanTrials = [("Trial 1", 'b'),
                ("Trial 1", 'c'),
                ("Trial 8",  'c'),
@@ -310,12 +345,12 @@ cleanTrials = [("Trial 1", 'b'),
                ("Trial 12",  'b'),
                ("Trial 12",  'c')]
 
-ignoreTrials = []
-#ignoreTrials = ["Trial 1",
-#                "Trial 2",
-#                "Trial 3",
-#                "Trial 4"]
-ignoreCrayfish = []
+locationNames = ["edge", "corner", "middle"]
+
+#ignoreTrials = ["Trial 9",
+#                "Trial 10",
+#                "Trial 11",
+#                "Trial 12"]
 #ignoreCrayfish = [("Trial 6", "b", 2),
 #                  ("Trial 4", "b", 1),
 #                  ("Trial 4", "c", 1),
