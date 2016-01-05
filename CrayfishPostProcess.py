@@ -156,9 +156,6 @@ def processOverAllSessions(name, xLabel, yLabel, collapse):
   plt.clf()
 
 
-
-
-
 def averageSpeed(samples):
   return safeAverage([sample.speed for sample in samples])
 
@@ -212,6 +209,7 @@ def intoIncrementsOf(samples, f, incrementDuration):
 
   return list(map(f, sampleList))
 
+#TODO need to add "all_samples" output files for stats- both combined and split by session
 def makeIncrementDataSet(name, timeIncrement, summarizeIncrement, combineIncrements):
   outDirectory = "datasets\\" + name + "\\"
   ensureDir(outDirectory)
@@ -252,23 +250,31 @@ def splitAtTime(samples, timeCutoff):
   return [[sample for sample in samples if  sample.time < timeCutoff],
           [sample for sample in samples if sample.time >= timeCutoff and sample.time < (timeCutoff * 2)]]
 
-def dataRow(trialName, crayfishIndex, val, session = None, splitIndex = None):
+def dataRow(trialName, crayfishIndex, val, session = None, splitIndex = None, length = None):
     dataStr  = "t_" + str(trialTreatments[trialName])
-    if splitIndex != None: dataStr += "_part_" + str(splitIndex)
     dataStr += ", " + trialName + "_" + str(crayfishIndex+1)
-    #dataStr += ", " + trialName
-    dataStr += ", " + str(val) + "\n"
+    dataStr += ", " + trialName
+    dataStr += ", " + str(val)
+    if session != None: dataStr += ", " + session
+    if length != None: dataStr += ", " + str(length)
+    if splitIndex != None: dataStr += ", part_" + str(splitIndex)
+    dataStr += "\n"
     return dataStr
 
-def dataHeader(name):
-    return "treatment, crayfishid, " + name + "\n"
+def dataHeader(name, length = False, session = False, splitIndex = False):
+  header = "treatment, crayfishid, trial, " + name 
+  if session: header += ", session"
+  if length: header += ", length"
+  if splitIndex: header += ", sessionPart"
+  header += "\n"
+  return header
 
 def makeDataSets(fileName, f, proj, timeCutoff = None):
   outDir = "datasets\\" + fileName + "\\"
   outPath = outDir + fileName
   ensureDir(outDir)
   experimentFile = open(outPath + "_all_samples.csv", 'w')
-  experimentFile.write(dataHeader(fileName))
+  experimentFile.write(dataHeader(fileName, splitIndex = timeCutoff != None, session = True, length = True))
 
   for location in allLocations:
 
@@ -280,7 +286,7 @@ def makeDataSets(fileName, f, proj, timeCutoff = None):
         outFileName = outPath + "_" + sessionName + ".csv"
       outFile = open(outFileName, 'w')
       sessionFile = open(outPath + "_all_samples_session_" + sessionName + ".csv", 'w')
-      sessionFile.write(dataHeader(fileName))
+      sessionFile.write(dataHeader(fileName, session=True, length=True, splitIndex = timeCutoff != None))
 
       if (timeCutoff == None or 'a' in sessionName):
         header = "crayfish index (0.0), 0.0, crayfish index (0.5), 0.5, crayfish index (5.0), 5.0, crayfish index (50.0), 50.0\n"
@@ -314,7 +320,7 @@ def makeDataSets(fileName, f, proj, timeCutoff = None):
               extracted = proj(dataSet)
               val = f(extracted)
               sampleStr = dataRow(trialName, crayfishIndex, val)
-              experimentFile.write(sampleStr)
+              experimentFile.write(dataRow(trialName, crayfishIndex, val, session=sessionName, length = crayfishLengths[trialName][crayfishIndex]))
               sessionFile.write(sampleStr)
               trialData.append(val)
               population += extracted
@@ -323,11 +329,11 @@ def makeDataSets(fileName, f, proj, timeCutoff = None):
               extracted = list(map(proj, splitDataSets))
               vals = list(map(f, extracted))
 
-              sampleStr  = dataRow(trialName, crayfishIndex, vals[0], 0)
-              sampleStr2 = dataRow(trialName, crayfishIndex, vals[1], 1)
+              sampleStr  = dataRow(trialName, crayfishIndex, vals[0], splitIndex = 0, session = sessionName, length = crayfishLengths[trialName][crayfishIndex])
+              sampleStr2 = dataRow(trialName, crayfishIndex, vals[1], splitIndex = 1, session = sessionName, length = crayfishLengths[trialName][crayfishIndex])
 
-              experimentFile.write(sampleStr)
-              experimentFile.write(sampleStr2)
+              experimentFile.write(dataRow(trialName, crayfishIndex, vals[0], splitIndex = 0, session = sessionName))
+              experimentFile.write(dataRow(trialName, crayfishIndex, vals[1], splitIndex = 1, session = sessionName))
               sessionFile.write(sampleStr)
               sessionFile.write(sampleStr2)
 
@@ -342,9 +348,9 @@ def makeDataSets(fileName, f, proj, timeCutoff = None):
           if (timeCutoff != None): treatmentDataSecondPart += trialDataSecondPart
 
         # add stderr
-        treatmentData.append(numpy.std(population)/math.sqrt(len(population)))
+        treatmentData.append(stderr(population))
         if (timeCutoff != None):
-          treatmentDataSecondPart.append(numpy.std(populationSecondPart)/math.sqrt(populationSecondPart))
+          treatmentDataSecondPart.append(stderr(populationSecondPart))
         crayfishIdentifiers.append("sterr")
 
         # add min
@@ -359,6 +365,18 @@ def makeDataSets(fileName, f, proj, timeCutoff = None):
           treatmentDataSecondPart.append(max(populationSecondPart))
         crayfishIdentifiers.append("max")
 
+        # add first quartile
+        treatmentData.append(numpy.percentile(population, 25))
+        if (timeCutoff != None):
+          treatmentDataSecondPart.append(numpy.percentile(populationSecondPart, 25))
+        crayfishIdentifiers.append("first quartile")
+
+        # add third quartile
+        treatmentData.append(numpy.percentile(population, 75))
+        if (timeCutoff != None):
+          treatmentDataSecondPart.append(numpy.percentile(populationSecondPart, 75))
+        crayfishIdentifiers.append("third quartile")
+
         allData.append(crayfishIdentifiers)
         allData.append(treatmentData)
         if (timeCutoff != None):allData.append(treatmentDataSecondPart)
@@ -367,31 +385,6 @@ def makeDataSets(fileName, f, proj, timeCutoff = None):
       fileData = transposedData
       for row in fileData:
         outFile.write((",".join(map(str, row))) + "\n")
-
-def makeLocationDataSets(fileName, f):
-  outDir = "datasets\\"
-  outPath = outDir + fileName
-  ensureDir(outDir)
-
-  sessionData = []
-
-  for sessionName in sessionNames:
-    outFile = open(outPath + "_" + sessionName + ".csv", 'w')
-    header = "0.0, 0.5, 5.0, 50.0\n"
-    outFile.write(header)
-
-    for location in locationNames:
-      treatmentData = []
-      for treatmentName in treatmentNames:
-        crayfishData = []
-        for trialName in treatmentTrials[treatmentName]:
-          for crayfishIndex in range(0, numCrayfish):
-            refinedData = retrieveData(trialName, sessionName, crayfishIndex)
-            val = f(location, refinedData)
-            crayfishData.append(val)
-        treatmentData.append(safeAverage(crayfishData))
-
-      outFile.write(location + ", " + (",".join(map(str, treatmentData))) + "\n")
 
 def filterByLocation(location, dataSet):
   return list(filter(lambda sample : sample.location == location or location == "all", dataSet))
@@ -416,21 +409,22 @@ def timeSpentLocation(location, crayfishData):
   return numMiddle / numSamples
 
 def pauseDurations(samples):
+  if len(samples) == 0:return []
+
   prevSample = samples[0]
   timePaused = 0
   pausing = False
   pausedTimeList = []
 
   for sample in samples[1:]:
-    if location == "all":
-      if sampleDist(prevSample, sample) < speedThreshold:
-        pausing = True
-        timePaused += sampleTimePassed(prevSample, sample)
-      else:
-        pausing = False
-        if timePaused != 0:
-          pausedTimeList.append(timePaused)
-        timePaused = 0
+    if sampleDist(prevSample, sample) < speedThreshold:
+      pausing = True
+      timePaused += sampleTimePassed(prevSample, sample)
+    else:
+      pausing = False
+      if timePaused != 0:
+        pausedTimeList.append(timePaused)
+      timePaused = 0
     prevSample = sample
 
   #in case the crayfish ended the session pausing
@@ -439,8 +433,8 @@ def pauseDurations(samples):
 
   return pausedTimeList
 
-def averageTimePaused(location, samples):
-  return safeAverage(pauseDurations(samples, location))
+def averageTimePaused(samples):
+  return safeAverage(pauseDurations(samples))
 
 def averageTimePausedLocation(location):
   def timePausedFunction(samples):
@@ -520,22 +514,17 @@ def postprocess():
   #processOverAllSessions("TotalDistCorner", "Crayfish ID", "TotalDistance", totalDistanceLocation("corner"))
 
   # Full data set summary
-  #shortestRecordingTime = recordingSessionLengths(False)
+  shortestRecordingTime = recordingSessionLengths(False)
 
   #Data sets for graphing
   makeDataSets("avgSpeed",  safeAverage, getSpeeds)
   #makeDataSets("avgSpeedWalking",  safeAverage, getSpeedsWalking)
   #makeDataSets("averagePauseDuration_seconds",  safeAverage, pauseDurations)
+  makeDataSets("totalDist_mm", sum, getDistances, shortestRecordingTime)
 
   #not sure if this can be made to work
   #makeDataSets("averageForwardDirectiveness",  forwardDirectivenessRatio, distances)
 
-  #makeDataSets("averageTimePaused", safeAverage, averageTimePaused("all"))
-  #makeDataSets("totalDist_mm", sum, getDistances, shortestRecordingTime)
-
-
-  #makeLocationDataSets("avgSpeedLocation", avgSpeedLocation)
-  #makeLocationDataSets("totalDistLocation", totalDistLocation)
   #makeLocationDataSets("timeSpent", timeSpentLocation)
 
   #Data sets broken into increments

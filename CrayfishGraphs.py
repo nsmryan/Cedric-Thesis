@@ -192,11 +192,6 @@ def outputPath(trialName):
   """ This is a utility function for creating file names from session data """
   return outDir + "/" + trialName + "/"
 
-def sessionStats(session):
-  numSamples = len(session.sampleSet)
-  avgSpeeds = [sum(sample.speed for sample in samples) / len(samples) for samples in session.sampleSet]
-  return SessionStats(session.sessionName, getStage(session.sessionName), avgSpeeds)
-
 def summarizeDataset():
   for trialName, trialDatas in trials.items():
     for session in trialDatas:

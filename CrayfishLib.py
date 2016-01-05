@@ -1,3 +1,4 @@
+import numpy
 import math
 import os
 from enum import Enum
@@ -7,6 +8,14 @@ inDir = "input"
 
 ignoreTrials = []
 ignoreCrayfish = []
+#ignoreTrials = ["Trial 9",
+#                "Trial 10",
+#                "Trial 11",
+#                "Trial 12"]
+#ignoreCrayfish = [("Trial 6", "b", 2),
+#                  ("Trial 4", "b", 1),
+#                  ("Trial 4", "c", 1),
+#                  ("Trial 5", "b", 5)]
 
 runFiltering = True
 
@@ -22,6 +31,7 @@ crayfishHeader = "time (seconds), x (mm), y (mm), x velocity (mm/second), y velo
 anovaHeader = "treatment, time, crayfishid, " # add on name of numerical attribute at end
 
 speedThreshold = 1
+pauseThreholdHigh = 60*5
 
 mmPerPixelX = 127/276
 mmPerPixelY = 76/164
@@ -63,12 +73,15 @@ class Box:
 
     if not leftRight and not topBottom:
       location = "middle"
-    elif (leftRight or topBottom) and (not leftRight or not topBottom):
-      location = "edge"
-    elif leftRight and topBottom:
-      location = "corner"
     else:
-      print("location could not be determined")
+      location = "edge"
+    #elif (leftRight or topBottom) and (not leftRight or not topBottom):
+    #  location = "edge"
+    #else:
+    #  print("location could not be determined (" + str(x) + ", " + str(y) + ")")
+    #  print(str(self.extents))
+    #  print(str(self.location))
+    #  exit(0)
 
     #print("(x, y) = " + str((x, y)))
     #print("locations = " + str(self.location))
@@ -196,6 +209,14 @@ def interlace(first, second):
 
 def reindex(ls):
   return [ls[ix] for ix in cedricIndices]
+
+def sessionStats(session):
+  numSamples = len(session.sampleSet)
+  avgSpeeds = [sum(sample.speed for sample in samples) / len(samples) for samples in session.sampleSet]
+  return SessionStats(session.sessionName, getStage(session.sessionName), avgSpeeds)
+
+def stderr(samples):
+  return numpy.std(samples)/math.sqrt(len(samples))
 
 # from the original Java program...
 # for session a always use camera 1
@@ -345,7 +366,8 @@ cleanTrials = [("Trial 1", 'b'),
                ("Trial 12",  'b'),
                ("Trial 12",  'c')]
 
-locationNames = ["edge", "corner", "middle"]
+locationNames = ["edge", "middle"]
+allLocations = locationNames + ["all"]
 
 #ignoreTrials = ["Trial 9",
 #                "Trial 10",
