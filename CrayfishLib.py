@@ -31,7 +31,7 @@ crayfishHeader = "time (seconds), x (mm), y (mm), x velocity (mm/second), y velo
 anovaHeader = "treatment, time, crayfishid, " # add on name of numerical attribute at end
 
 speedThreshold = 1
-pauseThreholdHigh = 60*5
+pauseThreholdHigh = 30
 
 mmPerPixelX = 127/276
 mmPerPixelY = 76/164
@@ -154,6 +154,41 @@ class Session:
     self.sessionName = sessionName
     self.sampleSet = sampleSet
 
+class Path:
+  def __init__(self, samples):
+    self.samples = samples
+
+  def duration(self):
+    return self.samples[-1].time - self.samples[0].time
+
+  def intoPaths(samples):
+    inPath = False
+    pathSamples = []
+    paths = []
+    for (prevSample, sample) in zip(samples[:-1], samples[1:]):
+      dist = sampleDist(prevSample, sample)
+      if dist > speedThreshold:
+        inPath = True
+        pathSamples.append(prevSample)
+      else:
+        if inPath and len(pathSamples) > 1:
+          pathSamples.append(prevSample)
+          paths.append(Path(pathSamples))
+          pathSamples = []
+        inPath = False
+    if len(pathSamples) > 1:
+      paths.append(Path(pathSamples))
+    return paths
+
+  def curveRatio(self):
+    if totalDistance(self.samples) == 0:
+      print([sample.x for sample in self.samples])
+      print([sample.y for sample in self.samples])
+    return sampleDist(self.samples[0], self.samples[-1]) / totalDistance(self.samples)
+
+  def combinePaths(paths):
+    return Path([sample for sample in path.samples for path in paths])
+
 # a full trial with all recording sessions
 class Trial:
   def __init__(self, trialName, sessions):
@@ -217,6 +252,16 @@ def sessionStats(session):
 
 def stderr(samples):
   return numpy.std(samples)/math.sqrt(len(samples))
+
+def compose(f, g):
+  def h(x):f(g(x))
+  return h
+
+def totalDistance(samples):
+  return sum(getDistances(samples))
+
+def getDistances(samples):
+  return [sum([sampleDist(sample0, sample1) for (sample0, sample1) in zip(samples[0:-1], samples[1:])])]
 
 # from the original Java program...
 # for session a always use camera 1

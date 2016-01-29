@@ -10,11 +10,13 @@ import math
 def recordingSessionLengths(savingLengths = False):
   outFileName = "recordingTime"
   shortestRecordingTime = 100000000
+  lengthDict = {}
 
   for sessionName in sessionNames:
     if savingLengths:
       recordingTimeFile = open(outFileName + "_" + sessionName + ".txt", 'w')
       recordingTimeFile.write("Trial-CrayfishID, Samples, Recording Time (seconds)" + "\n")
+    shortestInSession = 1000000000000
 
     for trialName in trialNames:
       crayfishIndex = 1
@@ -23,12 +25,17 @@ def recordingSessionLengths(savingLengths = False):
         identifier = trialName + "-" + str(crayfishIndex+1)
         recordingTime = refinedData[-1].time
         shortestRecordingTime = min(shortestRecordingTime, recordingTime)
-        
+        shortestInSession = min(shortestInSession, recordingTime)
+
         if savingLengths:
           outLine = ",".join([identifier, str(len(refinedData)), str(recordingTime)])
           recordingTimeFile.write(outLine + "\n")
 
-  return shortestRecordingTime
+    lengthDict[sessionName] = shortestInSession
+
+
+  lengthDict["overall"] = shortestRecordingTime
+  return lengthDict
 
 def retrieveData(trial, session, crayfish):
   path = ".\\output\\" + trial + "\\"
@@ -84,7 +91,7 @@ def processInSegments(name, xLabel, yLabel, timeSegment, collapse):
 
         for (index, l) in zip(range(0, len(sampleList)), sampleList):
           if len(l) == 0:
-            print("no data for " + str(index))
+            pass#print("no data for " + str(index))
 
         summaries =  []
         for (index, sampleSegment) in zip(range(0, len(sampleList)), sampleList):
@@ -163,14 +170,17 @@ def percentStill(samples):
   numSamples = len(samples)
 
   if numSamples == 0:
-    return [0]
+    return 0
 
   numStill = 0
   for sample in samples:
     if sample.xVel == 0 and sample.yVel == 0:
       numStill += 1
 
-  return [numStill / numSamples]
+  return numStill / numSamples
+
+def percentStillList(samples):
+  return [percentStill(samples)]
 
 def percentMiddle(samples):
   numSamples = len(samples)
@@ -205,7 +215,7 @@ def intoIncrementsOf(samples, f, incrementDuration):
 
   for (index, l) in zip(range(0, len(sampleList)), sampleList):
     if len(l) == 0:
-      print("no data for " + str(index))
+      pass#print("no data for " + str(index))
 
   return list(map(f, sampleList))
 
@@ -274,171 +284,6 @@ def dataHeader(name, length = False, session = False, splitIndex = False, increm
   header += "\n"
   return header
 
-def makeDataSets(fileName, combineProj, proj, summarizeIncrement = None, combineIncrements = None, timeIncrement = 60, timeCutoff = None):
-  outDir = "datasets\\" + fileName + "\\"
-  outPath = outDir + fileName
-  ensureDir(outDir)
-
-  # full dataset, all samples
-  experimentFile = open(outPath + "_all_samples.csv", 'w')
-  experimentFile.write(dataHeader(fileName, splitIndex = timeCutoff != None, session = True, length = True, location = True))
-
-  # full dataset, all samples, in increments
-  experimentIncrementFile = open(outPath + "_all_samples_increments.csv", 'w')
-  experimentIncrementFile.write(dataHeader(fileName, splitIndex = timeCutoff != None, session = True, length = True, increments = True, location = True))
-
-  for location in allLocations:
-
-    for sessionName in sessionNames:
-
-      # open file for this session
-      if location != "all":
-        outFileName = outPath + "_" + location + "_" + sessionName + ".csv"
-      else:
-        outFileName = outPath + "_" + sessionName + ".csv"
-      outFile = open(outFileName, 'w')
-      sessionFile = open(outPath + "_all_samples_session_" + sessionName + ".csv", 'w')
-      sessionFile.write(dataHeader(fileName, session=True, length=True, splitIndex = timeCutoff != None))
-
-      #session increment files aren't necessary if they are only for stats. The R program can just filter by session.
-      #sessionIncrementsFile = open(outPath + "_all_samples_session_increments_" + sessionName + ".csv", 'w')
-      #sessionIncrementsFile.write(dataHeader(fileName, session=True, length=True, splitIndex = timeCutoff != None, increments = True))
-
-      # write header for Cedric data files
-      if (timeCutoff == None or 'a' in sessionName):
-        header = "crayfish index (0.0), 0.0, crayfish index (0.5), 0.5, crayfish index (5.0), 5.0, crayfish index (50.0), 50.0\n"
-      else:
-        header = "crayfish index (0.0), 0.0 (first part), 0.0 (second part), crayfish index (0.5), 0.5 (first part), 0.5 (second part), crayfish index (5.0), 5.0 (first part), 5.0 (second part), crayfish index (50.0), 50.0 (first part), 50.0 (second part)\n"
-      outFile.write(header)
-
-      allData = []
-      for treatmentName in treatmentNames:
-        treatmentData = []
-        treatmentDataSecondPart = []
-        treatmentIncrementData = []
-        treatmentIncrementDataSecondPart = []
-        crayfishIdentifiers = []
-        population = []
-        populationSecondPart = []
-
-        for trialName in treatmentTrials[treatmentName]:
-          trialData = []
-          trialDataSecondPart = []
-          if trialName in ignoreTrials:
-              print("Ignoring " + trialName + "\n")
-              continue
-
-          for crayfishIndex in range(0, numCrayfish):
-            if (trialName, sessionName, crayfishIndex) in ignoreCrayfish:
-              print("Ignoring " + trialName + " " + sessionName + " " + str(crayfishIndex+1) + "\n")
-              continue
-
-            #print("trial = " + trialName + ", session = " + sessionName + ", treatment = " + str(treatmentName) + ", crayfish = " + str(crayfishIndex))
-
-            # retrieve data from files
-            refinedData = retrieveData(trialName, sessionName, crayfishIndex)
-            dataSet = filterByLocation(location, refinedData)
-            
-            # processing full session
-            if (timeCutoff == None):
-              #data summary file
-              extracted = proj(dataSet)
-              val = combineProj(extracted)
-              sampleStr = dataRow(trialName, crayfishIndex, val)
-              experimentFile.write(dataRow(trialName, crayfishIndex, val, session=sessionName, length = crayfishLengths[trialName][crayfishIndex], location = location))
-              sessionFile.write(sampleStr)
-              trialData.append(val)
-              population += extracted
-
-              #increment data
-              if (summarizeIncrement != None and combineIncrements != None):
-                incrementValues = intoIncrementsOf(dataSet, summarizeIncrement, timeIncrement)
-                treatmentIncrementData.append(incrementValues)
-                for (incrementIndex, value) in zip(range(0, len(incrementValues)-1), incrementValues):
-                  incrementSampleStr = dataRow(trialName, crayfishIndex, value, session=sessionName, length = crayfishLengths[trialName][crayfishIndex], increment = incrementIndex, location = location)
-                  experimentIncrementFile.write(incrementSampleStr)
-
-            # processing evenly sized sessions
-            else:
-              splitDataSets = splitAtTime(dataSet, timeCutoff)
-              extracted = list(map(proj, splitDataSets))
-              vals = list(map(combineProj, extracted))
-
-              sampleStr  = dataRow(trialName, crayfishIndex, vals[0], splitIndex = 0, session = sessionName, length = crayfishLengths[trialName][crayfishIndex], location = location)
-              sampleStr2 = dataRow(trialName, crayfishIndex, vals[1], splitIndex = 1, session = sessionName, length = crayfishLengths[trialName][crayfishIndex], location = location)
-
-              experimentFile.write(dataRow(trialName, crayfishIndex, vals[0], splitIndex = 0, session = sessionName, location = location))
-              experimentFile.write(dataRow(trialName, crayfishIndex, vals[1], splitIndex = 1, session = sessionName, location = location))
-              sessionFile.write(sampleStr)
-              sessionFile.write(sampleStr2)
-
-              trialData.append(vals[0])
-              treatmentDataSecondPart.append(vals[1])
-              population += extracted[0]
-              populationSecondPart += extracted[1]
-
-          identifiers = [trialName + "-" + str(ix) for ix in indexRange]
-          crayfishIdentifiers += identifiers
-          treatmentData += trialData
-          if (timeCutoff != None): treatmentDataSecondPart += trialDataSecondPart
-
-        #if (summarizeIncrement != None and combineIncrements != None):
-          #sessionData.append(list(map(combineIncrements, transpose(treatmentIncrementData))))
-
-      #write out increment data
-      #if summarizeIncrement != None and combineIncrements != None:
-      #  transposedIncrementData = transpose(sessionIncrementData)
-      #  fileIncrementData = transposedIncrementData 
-      #  for row in fileIncrementData:
-      #    sessionIncrementsFile.write((",".join(map(str, row))) + "\n")
-
-      #transposedData = transpose(sessionData)
-      #fileData = transposedData 
-      #for row in fileData:
-        #allDataOutFile.write((",".join(map(str, row))) + "\n")
-
-        # Add extra data for Cedric- measure statistics
-
-        # add stderr
-        treatmentData.append(stderr(population))
-        if (timeCutoff != None):
-          treatmentDataSecondPart.append(stderr(populationSecondPart))
-        crayfishIdentifiers.append("sterr")
-
-        # add min
-        treatmentData.append(min(population))
-        if (timeCutoff != None):
-          treatmentDataSecondPart.append(min(populationSecondPart))
-        crayfishIdentifiers.append("min")
-
-        # add max
-        treatmentData.append(max(population))
-        if (timeCutoff != None):
-          treatmentDataSecondPart.append(max(populationSecondPart))
-        crayfishIdentifiers.append("max")
-
-        # add first quartile
-        treatmentData.append(numpy.percentile(population, 25))
-        if (timeCutoff != None):
-          treatmentDataSecondPart.append(numpy.percentile(populationSecondPart, 25))
-        crayfishIdentifiers.append("first quartile")
-
-        # add third quartile
-        treatmentData.append(numpy.percentile(population, 75))
-        if (timeCutoff != None):
-          treatmentDataSecondPart.append(numpy.percentile(populationSecondPart, 75))
-        crayfishIdentifiers.append("third quartile")
-
-        allData.append(crayfishIdentifiers)
-        allData.append(treatmentData)
-        if (timeCutoff != None):allData.append(treatmentDataSecondPart)
-
-      # write out dataset by transposing and combining accumulated data
-      transposedData = transpose(allData)
-      fileData = transposedData
-      for row in fileData:
-        outFile.write((",".join(map(str, row))) + "\n")
-
 def filterByLocation(location, dataSet):
   return list(filter(lambda sample : sample.location == location or location == "all", dataSet))
 
@@ -461,8 +306,9 @@ def timeSpentLocation(location, crayfishData):
 
   return numMiddle / numSamples
 
-def pauseDurations(samples):
-  if len(samples) == 0:return []
+def pauseDurations(samples, threshold=pauseThreholdHigh):
+  if len(samples) == 0:
+    return []
 
   prevSample = samples[0]
   timePaused = 0
@@ -475,7 +321,7 @@ def pauseDurations(samples):
       timePaused += sampleTimePassed(prevSample, sample)
     else:
       pausing = False
-      if timePaused != 0:
+      if timePaused != 0 and timePaused < pauseThreholdHigh: 
         pausedTimeList.append(timePaused)
       timePaused = 0
     prevSample = sample
@@ -486,18 +332,13 @@ def pauseDurations(samples):
 
   return pausedTimeList
 
+def pauseDurationWith(threshold):
+  def l(samples):
+    return pauseDurations(samples, threshold)
+  return l
+
 def averageTimePaused(samples):
   return safeAverage(pauseDurations(samples))
-
-def averageTimePausedLocation(location):
-  def timePausedFunction(samples):
-    return averageTimePaused(location, samples)
-  return timePausedFunction
-
-def timePausedLocation(location):
-  def timePausedFunction(samples):
-    return pauseDurations(samples, location)
-  return timePausedFunction
 
 def totalDistanceLocation(location):
   def totalDistance(samples):
@@ -519,9 +360,6 @@ def getSpeedsWalking(samples):
 def averageSpeedWalking(samples):
   return safeAverage(getSpeedsWalking(samples))
 
-def getDistances(samples):
-  return [sum([sampleDist(sample0, sample1) for (sample0, sample1) in zip(samples[0:-1], samples[1:])])]
-
 def forwardDirectivenessRatio(samples):
   result = 0
 
@@ -541,9 +379,225 @@ def first(ls):
   #print(ls)
   return ls[0]
 
-# TODO make structure of data set information (name, proj, summaryFunction)
-#map over them
-#all locations to increment data sets
+def returnList(a): return [a]
+
+def percentMiddle(samples):
+  return timeSpentLocation("middle", samples)
+
+def percentMiddleList(samples):return [percentMiddle(samples)]
+
+def filterByTime(time, samples):
+  return [sample for sample in samples if sample.time < time]
+
+
+def makeDataSets(fileName, combineProj, proj, summarizeIncrement = None, timeIncrement = 60, timeCutoffs = None, splitSessions = False, units=""):
+  outDir = "datasets\\" + fileName + "\\"
+  outPath = outDir + fileName
+  ensureDir(outDir)
+
+  # full dataset, all samples
+  experimentFile = open(outPath + "_all_samples.csv", 'w')
+  experimentFile.write(dataHeader(fileName, splitIndex = splitSessions, session = True, length = True, location = True))
+
+  # full dataset, all samples, in increments
+  experimentIncrementFile = open(outPath + "_all_samples_increments.csv", 'w')
+  experimentIncrementFile.write(dataHeader(fileName, splitIndex = splitSessions, session = True, length = True, increments = True, location = True))
+
+  for location in allLocations:
+
+    for sessionName in sessionNames:
+
+      # open file for this session
+      if location != "all":
+        outFileName = outPath + "_" + location + "_" + sessionName + ".csv"
+      else:
+        outFileName = outPath + "_" + sessionName + ".csv"
+      sessionSummaryFile = open(outFileName, 'w')
+      sessionFile = open(outPath + "_all_samples_session_" + sessionName + ".csv", 'w')
+      sessionFile.write(dataHeader(fileName, session=True, length=True, splitIndex = splitSessions, location = True))
+
+      #session increment files aren't necessary if they are only for stats. The R program can just filter by session.
+      #sessionIncrementsFile = open(outPath + "_all_samples_session_increments_" + sessionName + ".csv", 'w')
+      #sessionIncrementsFile.write(dataHeader(fileName, session=True, length=True, splitIndex = timeCutoffs != None, increments = True))
+
+      # write header for Cedric data files
+      if (not splitSessions or 'a' in sessionName):
+        header = "crayfish index (0.0), " + fileName + "(" + units + ") treatment 0.0, crayfish index (0.5), " + fileName + "(" + units + ") treatment 0.5, crayfish index (5.0), " + fileName + "(" + units + ") treatment 5.0, crayfish index (50.0), " + fileName + "(" + units + ") treatment 50.0\n"
+      else:
+        header = "crayfish index (0.0), " + fileName + "(" + units + ") treatment 0.0 (first part), " + fileName + "(" + units + ") treatment 0.0 (second part), crayfish index (0.5), " + fileName + "(" + units + ") treatment 0.5 (first part), " + fileName + "(" + units + ") treatment 0.5 (second part), crayfish index (5.0), " + fileName + "(" + units + ") treatment 5.0 (first part), " + fileName + "(" + units + ") treatment 5.0 (second part), crayfish index (50.0), " + fileName + "(" + units + ") treatment 50.0 (first part), " + fileName + "(" + units + ") treatment 50.0 (second part)\n"
+      sessionSummaryFile.write(header)
+
+
+      allData = []
+      for treatmentName in treatmentNames:
+        treatmentData = []
+        treatmentDataSecondPart = []
+        treatmentIncrementData = []
+        treatmentIncrementData2 = []
+        crayfishIdentifiers = []
+        population = []
+        populationSecondPart = []
+
+        incrementFile = open(outPath + "_increments_ " + str(timeIncrement) + "seconds_session_" + sessionName + "_treatment_" + str(treatmentName) + ".csv", 'w')
+        if splitSessions or 'a' in sessionName:
+          header = ",".join(["crayfish " + str(index) + " " + trialName for index in indexRange for trialName in treatmentTrials[treatmentName]])
+        else:
+          header = ",".join(["crayfish " + str(index) + " (" + part + " part) " for index in indexRange for part in ["first", "second"] for trialName in treatmentTrials[treatmentName]])
+        incrementFile.write(header)
+        incrementFile.write("\n")
+
+        for trialName in treatmentTrials[treatmentName]:
+          trialData = []
+          trialDataSecondPart = []
+          if trialName in ignoreTrials:
+              print("Ignoring " + trialName + "\n")
+              continue
+
+          for crayfishIndex in range(0, numCrayfish):
+            if (trialName, sessionName, crayfishIndex) in ignoreCrayfish:
+              print("Ignoring " + trialName + " " + sessionName + " " + str(crayfishIndex+1) + "\n")
+              continue
+
+            #print("trial = " + trialName + ", session = " + sessionName + ", treatment = " + str(treatmentName) + ", crayfish = " + str(crayfishIndex))
+
+            # retrieve data from files
+            refinedData = retrieveData(trialName, sessionName, crayfishIndex)
+            dataSet = filterByLocation(location, refinedData)
+            dataSet = filterByTime(timeCutoffs[sessionName], dataSet)
+            
+            # processing full session
+            if not splitSessions:
+              #data summary file
+              extracted = proj(dataSet)
+              val = combineProj(extracted)
+              sampleStr = dataRow(trialName, crayfishIndex, val)
+              experimentFile.write(dataRow(trialName, crayfishIndex, val, session=sessionName, length = crayfishLengths[trialName][crayfishIndex], location = location))
+              sessionFile.write(sampleStr)
+              trialData.append(val)
+              population += extracted
+
+              #increment data
+              if summarizeIncrement != None:
+                incrementValues = intoIncrementsOf(dataSet, summarizeIncrement, timeIncrement)
+                treatmentIncrementData.append(incrementValues)
+                for (incrementIndex, value) in zip(range(0, len(incrementValues)-1), incrementValues):
+                  incrementSampleStr = dataRow(trialName, crayfishIndex, value, session=sessionName, length = crayfishLengths[trialName][crayfishIndex], increment = incrementIndex, location = location)
+                  experimentIncrementFile.write(incrementSampleStr)
+
+            # processing evenly sized sessions
+            else:
+              splitDataSets = splitAtTime(dataSet, timeCutoffs["overall"])
+              extracted = list(map(proj, splitDataSets))
+              vals = list(map(combineProj, extracted))
+
+              sampleStr  = dataRow(trialName, crayfishIndex, vals[0], splitIndex = 0, session = sessionName, length = crayfishLengths[trialName][crayfishIndex], location = location)
+              sampleStr2 = dataRow(trialName, crayfishIndex, vals[1], splitIndex = 1, session = sessionName, length = crayfishLengths[trialName][crayfishIndex], location = location)
+
+              experimentFile.write(dataRow(trialName, crayfishIndex, vals[0], splitIndex = 0, session = sessionName, location = location))
+              experimentFile.write(dataRow(trialName, crayfishIndex, vals[1], splitIndex = 1, session = sessionName, location = location))
+              sessionFile.write(sampleStr)
+              sessionFile.write(sampleStr2)
+
+              trialData.append(vals[0])
+              treatmentDataSecondPart.append(vals[1])
+              population += extracted[0]
+              populationSecondPart += extracted[1]
+
+              #increment data
+              if summarizeIncrement != None:
+                incrementValues = intoIncrementsOf(splitDataSets[0], summarizeIncrement, timeIncrement)
+                incrementValues2 = intoIncrementsOf(splitDataSets[1], summarizeIncrement, timeIncrement)
+                print("first = " + str(len(incrementValues)) + ", second = " + str(len(incrementValues2)))
+                treatmentIncrementData.append(incrementValues)
+                treatmentIncrementData2.append(incrementValues2)
+
+                for (incrementIndex, value) in zip(range(0, len(incrementValues)-1), incrementValues):
+                  incrementSampleStr = dataRow(trialName, crayfishIndex, value, splitIndex = 0, session=sessionName, length = crayfishLengths[trialName][crayfishIndex], increment = incrementIndex, location = location)
+                  experimentIncrementFile.write(incrementSampleStr)
+
+                for (incrementIndex, value) in zip(range(0, len(incrementValues2)-1), incrementValues2):
+                  incrementSampleStr2 = dataRow(trialName, crayfishIndex, value, splitIndex = 1, session=sessionName, length = crayfishLengths[trialName][crayfishIndex], increment = incrementIndex, location = location)
+                  experimentIncrementFile.write(incrementSampleStr2)
+
+          identifiers = [trialName + "-" + str(ix) for ix in indexRange]
+          crayfishIdentifiers += identifiers
+          treatmentData += trialData
+          if splitSessions: treatmentDataSecondPart += trialDataSecondPart
+
+        if summarizeIncrement != None:
+          incrementFile.write("\n".join([",".join(map(str, rowData)) for rowData in transpose(treatmentIncrementData)]))
+          if splitSessions:
+            incrementFile.write("\n".join([",".join(map(str, rowData)) for rowData in transpose(treatmentIncrementData2)]))
+
+      #write out increment data
+      #if summarizeIncrement != None and combineIncrements != None:
+      #  transposedIncrementData = transpose(sessionIncrementData)
+      #  fileIncrementData = transposedIncrementData 
+      #  for row in fileIncrementData:
+      #    sessionIncrementsFile.write((",".join(map(str, row))) + "\n")
+
+      #transposedData = transpose(sessionData)
+      #fileData = transposedData 
+      #for row in fileData:
+        #allDataOutFile.write((",".join(map(str, row))) + "\n")
+
+        # Add extra data for Cedric- measure statistics
+
+        # add stderr
+        treatmentData.append(stderr(population))
+        if splitSessions:
+          treatmentDataSecondPart.append(stderr(populationSecondPart))
+        crayfishIdentifiers.append("sterr")
+
+        # add min
+        treatmentData.append(min(population))
+        if splitSessions:
+          treatmentDataSecondPart.append(min(populationSecondPart))
+        crayfishIdentifiers.append("min")
+
+        # add max
+        treatmentData.append(max(population))
+        if splitSessions:
+          treatmentDataSecondPart.append(max(populationSecondPart))
+        crayfishIdentifiers.append("max")
+
+        # add mean
+        treatmentData.append(safeAverage(population))
+        if splitSessions:
+          treatmentDataSecondPart.append(safeAverage(populationSecondPart))
+        crayfishIdentifiers.append("mean")
+
+        # add first quartile
+        treatmentData.append(numpy.percentile(population, 25))
+        if splitSessions:
+          treatmentDataSecondPart.append(numpy.percentile(populationSecondPart, 25))
+        crayfishIdentifiers.append("first quartile")
+
+        # add third quartile
+        treatmentData.append(numpy.percentile(population, 75))
+        if splitSessions:
+          treatmentDataSecondPart.append(numpy.percentile(populationSecondPart, 75))
+        crayfishIdentifiers.append("third quartile")
+
+        allData.append(crayfishIdentifiers)
+        allData.append(treatmentData)
+        if splitSessions:allData.append(treatmentDataSecondPart)
+
+      # write out dataset by transposing and combining accumulated data
+      transposedData = transpose(allData)
+      fileData = transposedData
+      for row in fileData:
+        sessionSummaryFile.write((",".join(map(str, row))) + "\n")
+
+def samplesCurveRatios(samples):
+  ratios = [path.curveRatio() for path in Path.intoPaths(samples)]
+  if len(ratios) == 0:
+    ratios = [0]
+  return ratios
+
+def samplesCurveRatio(samples):
+  return safeAverage(samplesCurveRatios(samples))
+
 def postprocess():
   #Data sets for R statistics
 
@@ -573,16 +627,25 @@ def postprocess():
   #processOverAllSessions("TotalDistCorner", "Crayfish ID", "TotalDistance", totalDistanceLocation("corner"))
 
   # Full data set summary
-  shortestRecordingTime = recordingSessionLengths()
-  print("shortestRecordingTime = " + str(shortestRecordingTime))
+  lengthDict = recordingSessionLengths()
+  print("shortestRecordingTime overall = " + str(lengthDict["overall"]))
+  print("shortestRecordingTime a = " + str(lengthDict["a"]))
+  print("shortestRecordingTime b = " + str(lengthDict["b"]))
+  print("shortestRecordingTime c = " + str(lengthDict["c"]))
 
   #Data sets for graphing
-  #makeDataSets("avgSpeed",  safeAverage, getSpeeds)
-  #makeDataSets("avgSpeedWalking",  safeAverage, getSpeedsWalking)
-  #makeDataSets("averagePauseDuration_seconds",  safeAverage, pauseDurations)
-  #makeDataSets("totalDist_mm", sum, getDistances, shortestRecordingTime)
-  #makeDataSets("percentstandingstill", first, percentStill, timeCutoff = shortestRecordingTime)
-  makeDataSets("percentstandingstill", first, percentStill)
+  #TODO deal with including shortestRecordingTime 
+  #makeDataSets("avgSpeed",  safeAverage, getSpeeds, summarizeIncrement = averageSpeed, timeCutoffs = lengthDict, splitSessions = False, units="mm/second")
+  #makeDataSets("straightness",  safeAverage, samplesCurveRatios, summarizeIncrement = samplesCurveRatio, timeCutoffs = lengthDict, splitSessions = False, units="ratio")
+  #makeDataSets("avgSpeedWalking",  safeAverage, getSpeedsWalking, summarizeIncrement = averageSpeedWalking, timeCutoffs = lengthDict, units="mm/second")
+  #makeDataSets("averagePauseDuration_" + str(30) + "seconds",  safeAverage, pauseDurationWith(30), summarizeIncrement = averageTimePaused, timeCutoffs = lengthDict, units="mm/second")
+  #makeDataSets("averagePauseDuration_" + str(60) + "seconds",  safeAverage, pauseDurationWith(60), summarizeIncrement = averageTimePaused, timeCutoffs = lengthDict, units="mm/second")
+  makeDataSets("totalDist_mm", sum, getDistances, summarizeIncrement = totalDistance, timeCutoffs = lengthDict, units="mm")
+  #makeDataSets("percentstandingstill", first, percentStillList, summarizeIncrement = percentStill, timeCutoffs = lengthDict, units="percent")
+  #makeDataSets("percentTimeMiddle", first, percentMiddleList, summarizeIncrement = percentMiddle, timeCutoffs = lengthDict, units="percent")
+
+
+
 
   #not sure if this can be made to work
   #makeDataSets("averageForwardDirectiveness",  forwardDirectivenessRatio, distances)
