@@ -167,17 +167,17 @@ def refineDataSet(summaryFile, dataset):
     prevTime = time[0]
     totalSamples = len(rawSamples)
     sp = 0
-    prevX = rawSamples[0].x
-    prevY = rawSamples[0].y
+    prevX = rawSamples[0].x * camera.pixelDims[0]
+    prevY = rawSamples[0].y * camera.pixelDims[1]
 
     for (raw, vx, vy, moveAmount) in zip(rawSamples, vxs, vys, moveAmounts):
       location = innerBox.determineLocation(raw.x, raw.y) 
       raw.x *= camera.pixelDims[0]
       raw.y *= camera.pixelDims[1]
-      raw.width *= mmPerPixelX
-      raw.height *= mmPerPixelY
+      raw.width *= camera.pixelDims[0]
+      raw.height *= camera.pixelDims[1]
       if raw.time != prevTime:
-        sp = (dist(raw.x, raw.y, prevX, prevY) / (raw.time-prevTime))
+        sp = (dist(prevX, prevY, raw.x, raw.y) / (raw.time-prevTime))
       else:
         sp = 0
 
@@ -195,9 +195,9 @@ def refineDataSet(summaryFile, dataset):
     edgeLostDataText = "percent near edge = " + str(100.0 * (float(edgeLost)/float(totalSamples)))
     fastLostDataText = "percent too fast = " + str(100.0 * (float(tooFastLost)/float(totalSamples)))
     summaryFile.write(rawSamples[0].trial + " " + rawSamples[0].stage + " " + str(rawSamples[0].index) + "\n")
-    print(totalLostDataText)
-    print(edgeLostDataText)
-    print(fastLostDataText)
+    #print(totalLostDataText)
+    #print(edgeLostDataText)
+    #print(fastLostDataText)
     summaryFile.write(totalLostDataText + "\n")
     summaryFile.write(edgeLostDataText + "\n")
     summaryFile.write(fastLostDataText + "\n")
@@ -208,8 +208,8 @@ def refineDataSet(summaryFile, dataset):
 
 def crayfishCSV(crayfish):
     """ Turn a crayfish's data into CVS output """
-    sp = math.sqrt(crayfish.xVel*crayfish.xVel + crayfish.yVel*crayfish.yVel)
-    formatParams = [crayfish.time, crayfish.x, crayfish.y, crayfish.xVel, crayfish.yVel, sp, crayfish.rotation, crayfish.height, crayfish.width]
+    #sp = math.sqrt(crayfish.xVel*crayfish.xVel + crayfish.yVel*crayfish.yVel)
+    formatParams = [crayfish.time, crayfish.x, crayfish.y, crayfish.xVel, crayfish.yVel, crayfish.rotation, crayfish.height, crayfish.width, crayfish.speed]
     return "{: 5.3f},  {: 5.3f},  {: 5.3f},  {: 5.3f},  {: 5.3f},  {: 5.3f},  {: 5.3f},  {: 5.3f},  {: 5.3f}".format(*formatParams) + ", " + crayfish.location
 
 def outgest(session):
@@ -303,6 +303,7 @@ def processExperiment(trialsToRun, stagesToRun):
             if not os.path.exists(trialOutPath): os.makedirs(trialOutPath)
 
             # open the file and perform processing
+            print("trialOutFile = " + trialOutFile)
             with open(trialOutFile, 'w') as outFile:
                 # break the data into records
                 dataset = parseDataSet(trialName, getStage(sessionName), rawData)
@@ -310,17 +311,17 @@ def processExperiment(trialsToRun, stagesToRun):
                 # create nicer data
                 crayfishes = refineDataSet(dataSummaryFile, dataset)
 
-                # perform the main processing
+                for (index, crayfishData) in zip(indexRange, crayfishes):
+                  print("crayfish " + str(index) + " num records = " + str(len(crayfishData)))
+
                 session = Session(trialName, sessionName, crayfishes)
 
                 #save session data to the trial it is associated with
                 trials[trialName].append(sessionStats(session))
 
-                if graphing:
-                  sessionGraphs(session)
-
                 #save the resulting cleaned-up data to a file 
-                outgest(session)
+                if savingPreprocessResults:
+                  outgest(session)
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:

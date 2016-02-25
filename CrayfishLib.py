@@ -2,22 +2,54 @@ import numpy
 import math
 import os
 from enum import Enum
-
 outDir = "output"
 inDir = "input"
 
-ignoreTrials = []
-ignoreCrayfish = []
-#ignoreTrials = ["Trial 9",
-#                "Trial 10",
-#                "Trial 11",
-#                "Trial 12"]
-#ignoreCrayfish = [("Trial 6", "b", 2),
-#                  ("Trial 4", "b", 1),
-#                  ("Trial 4", "c", 1),
-#                  ("Trial 5", "b", 5)]
+#ignoreTrials = [
+                #"Trial 9",
+                #"Trial 10",
+                #"Trial 11",
+                #"Trial 12"
+#               ]
+
+ignoreCrayfish = [
+                  ("Trial 4", "a", 4),
+                  ("Trial 5", "b", 5),
+                  ("Trial 5", "c", 2),
+                  ("Trial 6", "a", 1),
+                  ("Trial 6", "b", 1),
+                  ("Trial 7", "b", 2),
+                  ("Trial 7", "c", 5),
+                  ("Trial 9", "a", 4),
+                                    
+                  ("Trial 5", "a", 2),
+                  ("Trial 5", "b", 2),
+                  ("Trial 5", "c", 2),
+                                    
+                  ("Trial 8", "a", 4),
+                  ("Trial 8", "b", 4),
+                  ("Trial 8", "c", 4),
+
+                  ("Trial 9", "a", 6),
+                  ("Trial 9", "b", 6),
+                  ("Trial 9", "c", 6),
+
+                  ("Trial 10", "a", 3),
+                  ("Trial 10", "b", 3),
+                  ("Trial 10", "c", 3),
+
+                  ("Trial 11", "a", 3),
+                  ("Trial 11", "b", 3),
+                  ("Trial 11", "c", 3),
+
+                  ("Trial 11", "a", 6),
+                  ("Trial 11", "b", 6),
+                  ("Trial 11", "c", 6)
+                 ]
 
 runFiltering = True
+
+savingPreprocessResults = True
 
 numColumns = 37 # ms plus 6 records of 6 fields each
 
@@ -25,16 +57,13 @@ numFields = 6 # 6 fields per crayfish
 
 numCrayfish = 6 # 6 crayfish per dataset
 
-crayfishHeader = "time (seconds), x (mm), y (mm), x velocity (mm/second), y velocity (mm/second), speed (mm/second), rotation (degrees), length (mm), width (mm), location\n"
-
-#the trial name is part of the crayfish id
-anovaHeader = "treatment, time, crayfishid, " # add on name of numerical attribute at end
+crayfishHeader = "time (seconds), x (mm), y (mm), x velocity (mm/second), y velocity (mm/second), rotation (degrees), length (mm), width (mm), location, speed (mm/second)\n"
 
 speedThreshold = 1
 pauseThreholdHigh = 30
 
-mmPerPixelX = 127/276
-mmPerPixelY = 76/164
+#mmPerPixelX = 127/276
+#mmPerPixelY = 76/164
 
 #xErrorEdge = 8
 #yErrorEdge = 5
@@ -195,6 +224,15 @@ class Trial:
     self.trialName = trialName
     self.sessions = sessions
 
+def squareList(l, length, emptyElem):
+  extendLength = length - len(l)
+  return l + [emptyElem for i in range(0, extendLength)]
+
+def squareTranspose(lists, emptyElem):
+  lenLongest = max(map(len, lists))
+  relist = [squareList(l, lenLongest, emptyElem) for l in lists]
+  return transpose(relist)
+
 def transpose(lists):
    """ take a list of rows and turn it into a list of columns """
    if not lists: return []
@@ -262,6 +300,9 @@ def totalDistance(samples):
 
 def getDistances(samples):
   return [sum([sampleDist(sample0, sample1) for (sample0, sample1) in zip(samples[0:-1], samples[1:])])]
+
+def filterZeros(l):
+  return list(filter(lambda a: a != 0, l))
 
 # from the original Java program...
 # for session a always use camera 1
