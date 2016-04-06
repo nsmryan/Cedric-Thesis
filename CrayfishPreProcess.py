@@ -247,6 +247,7 @@ def allFiles(dir):
   """ Find all files in a directory, returning the path and file name """
   fileList = []
   for path, dirs, files in os.walk(dir):
+      files = list(filter(lambda fileName:not fileName.startswith("."), files))
       if len(files) > 0:
           splitPath = path.split("\\")
           if len(splitPath) > 1:

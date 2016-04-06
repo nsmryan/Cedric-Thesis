@@ -7,6 +7,10 @@ import sys
 import math
 
 
+outDatasetPath = "datasets"
+
+
+# Determine the length of each recording session
 def recordingSessionLengths(savingLengths = False):
   outFileName = "recordingTime"
   shortestRecordingTime = 100000000
@@ -38,6 +42,7 @@ def recordingSessionLengths(savingLengths = False):
   lengthDict["overall"] = shortestRecordingTime
   return lengthDict
 
+# Retrieve the data from a particular file given by the trial, session, and crayfish
 def retrieveData(trial, session, crayfish):
   path = ".\\output\\" + trial + "\\"
   dataFiles = [name for name in os.listdir(path) if (session + "_") in name and ("_" + str(crayfish)) in name]
@@ -61,6 +66,14 @@ def averageSpeed(samples):
   #print(getSpeeds(samples))
   #exit(0)
   return safeAverage(getSpeeds(samples))
+
+def avgAcc(samples):
+  speeds = safeAverage(getSpeeds(samples))
+  accs = [snd - fst for (fst, snd) in zip(speeds[1:], speeds[:-1])]
+  return safeAverage(accs)
+
+def avgAccList(samples):
+  return [avgAcc(samples)]
 
 def percentStill(samples):
   numSamples = len(samples)
@@ -119,6 +132,7 @@ def splitAtTime(samples, timeCutoff):
   return [[sample for sample in samples if  sample.time < timeCutoff],
           [sample for sample in samples if sample.time >= timeCutoff and sample.time < (timeCutoff * 2)]]
 
+# Crate a row for a data file
 def dataRow(trialName, crayfishIndex, val, session = None, splitIndex = None, length = None, increment = None, location = None):
   dataStr  = "t_" + str(trialTreatments[trialName])
   dataStr += ", " + trialName + "_" + str(crayfishIndex+1)
@@ -133,6 +147,7 @@ def dataRow(trialName, crayfishIndex, val, session = None, splitIndex = None, le
 
   return dataStr
 
+# Create a header for a data set
 def dataHeader(name, length = False, session = False, splitIndex = False, increments = False, location = False):
   header = "treatment, crayfishid, trial, " + name 
   if session: header += ", session"
@@ -257,6 +272,14 @@ def forwardDirectivenessRatio(samples):
 
 def identity(a):return a
 
+def logTransformation(x):
+  return safeLog(x+1)
+
+def logTransformationWithOffset(offset):
+  def trans(x):
+    return logTransformation(x+offset)
+  return trans
+
 def first(ls):
   return ls[0]
 
@@ -271,11 +294,14 @@ def filterByTime(time, samples):
   return [sample for sample in samples if sample.time < time]
 
 
-def makeDataSets(fileName, combineProj, proj, summarizeIncrement = None, timeIncrement = 60, timeCutoffs = None, splitSessions = False, units=""):
+def makeDataSets(fileName, combineProj, proj, summarizeIncrement = None,
+                 timeIncrement = 60, timeCutoffs = None, splitSessions = False,
+                 units="", maxTime=60*30, transformation=identity, adjustForLength=False,
+                 subtractIndividualOffset=False):
   if splitSessions:
-    outDir = "datasets\\" + fileName + "_split_sessions\\"
+    outDir = outDatasetPath + "\\" + fileName + "_split_sessions\\"
   else:
-    outDir = "datasets\\" + fileName + "\\"
+    outDir = outDatasetPath + "\\" + fileName + "\\"
   outPath = outDir + fileName
   ensureDir(outDir)
 
@@ -286,6 +312,9 @@ def makeDataSets(fileName, combineProj, proj, summarizeIncrement = None, timeInc
   # full dataset, all samples, in increments
   experimentIncrementFile = open(outPath + "_all_samples_increments.csv", 'w')
   experimentIncrementFile.write(dataHeader(fileName, splitIndex = splitSessions, session = True, length = True, increments = True, location = True))
+
+  individualOffsets = { }
+  individualOffsetsIncrements = { }
 
   for locationName in allLocations:
 
@@ -324,7 +353,8 @@ def makeDataSets(fileName, combineProj, proj, summarizeIncrement = None, timeInc
         populationSecondPart = []
 
         incrementFile = open(outPath + "_increments_ " + str(timeIncrement) + "seconds_session_" + sessionName + "_treatment_" + str(treatmentName) + ".csv", 'w')
-        header = ",".join(["crayfish " + str(index) + " " + trialName for index in indexRange for trialName in treatmentTrials[treatmentName]])
+        header = ",".join(["crayfish " + str(index) + " " + trialName for trialName in treatmentTrials[treatmentName] for index in indexRange])
+        header += ", stderr, mean"
         #if splitSessions or 'a' in sessionName:
         #  header = ",".join(["crayfish " + str(index) + " " + trialName for index in indexRange for trialName in treatmentTrials[treatmentName]])
         #else:
@@ -341,11 +371,13 @@ def makeDataSets(fileName, combineProj, proj, summarizeIncrement = None, timeInc
 
           for crayfishIndex in range(0, numCrayfish):
             #print("trial = " + trialName + ", session = " + sessionName + ", treatment = " + str(treatmentName) + ", crayfish = " + str(crayfishIndex))
-            ignoringCurrentCrayfish = (trialName, sessionName, crayfishIndex) in ignoreCrayfish
+            ignoringCurrentCrayfish = (trialName, sessionName, crayfishIndex+1) in ignoreCrayfish
+            ignoringCurrentCrayfish |= trialName in ignoreTrials
 
             # retrieve data from files
             refinedData = retrieveData(trialName, sessionName, crayfishIndex)
             dataSet = filterByLocation(locationName, refinedData)
+            if maxTime != -1:dataSet = filterByTime(maxTime, dataSet)
 
             #dataSet = filterByTime(timeCutoffs[sessionName], dataSet)
             
@@ -354,28 +386,63 @@ def makeDataSets(fileName, combineProj, proj, summarizeIncrement = None, timeInc
               #data summary file
               extracted = proj(dataSet)
               val = combineProj(extracted)
+              if adjustForLength:
+                val = val / crayfishLengths[trialName][crayfishIndex]
+
+              if subtractIndividualOffset:
+                if (trialName, crayfishIndex) in individualOffsets.keys():
+                  val = val - individualOffsets[(trialName, crayfishIndex)]
+                else:
+                  individualOffsets[(trialName, crayfishIndex)] = val
+              val = transformation(val)
 
               if ignoringCurrentCrayfish:
                 print("Ignoring " + trialName + " " + sessionName + " " + str(crayfishIndex+1) + "\n")
                 val = ""
                 extracted = []
+              else:
+                if len(extracted) > 1:
+                  print("Extracted data will not have transformations applied!")
+                population += [val]
 
               sampleStr = dataRow(trialName, crayfishIndex, val)
               experimentFile.write(dataRow(trialName, crayfishIndex, val, session=sessionName, length=crayfishLengths[trialName][crayfishIndex], location=locationName))
               sessionFile.write(sampleStr)
               trialData.append(val)
-              population += extracted
+
 
               #increment data
+              #if summarizeIncrement != None:
+                #incrementValues = intoIncrementsOf(dataSet, summarizeIncrement, timeIncrement)
+                #if ignoringCurrentCrayfish:
+                  #incrementValues = ["" for item in incrementValues]
+                #treatmentIncrementData.append(incrementValues)
+                #for (incrementIndex, value) in zip(range(0, len(incrementValues)-1), incrementValues):
+                  #incrementSampleStr = dataRow(trialName, crayfishIndex, value, session=sessionName, length=crayfishLengths[trialName][crayfishIndex], increment=incrementIndex, location=locationName)
+                  #experimentIncrementFile.write(incrementSampleStr)
+
+			  #the following is new from Noah 3-22-2016, old version above silenced 
+			  #increment data 
               if summarizeIncrement != None:
                 incrementValues = intoIncrementsOf(dataSet, summarizeIncrement, timeIncrement)
+
+                incrementValues = list(map(lambda val : val / crayfishLengths[trialName][crayfishIndex], incrementValues))
+
+                if subtractIndividualOffset:
+                  if (trialName, crayfishIndex) in individualOffsetsIncrements.keys():
+                    incrementValues = list(map(lambda pair : safeDivide(pair[0], individualOffsetsIncrements[(trialName, crayfishIndex)][pair[1]]),
+                                               zip(incrementValues, list(range(0, len(incrementValues))))))
+                  else:
+                    individualOffsetsIncrements[(trialName, crayfishIndex)] = incrementValues
+
+                incrementValues = list(map(transformation, incrementValues))
                 if ignoringCurrentCrayfish:
                   incrementValues = ["" for item in incrementValues]
                 treatmentIncrementData.append(incrementValues)
                 for (incrementIndex, value) in zip(range(0, len(incrementValues)-1), incrementValues):
                   incrementSampleStr = dataRow(trialName, crayfishIndex, value, session=sessionName, length=crayfishLengths[trialName][crayfishIndex], increment=incrementIndex, location=locationName)
                   experimentIncrementFile.write(incrementSampleStr)
-
+				  
             # processing evenly sized sessions
             else:
               dataSetIncr = splitAtTime(dataSet, timeCutoffs["overall"])
@@ -421,7 +488,11 @@ def makeDataSets(fileName, combineProj, proj, summarizeIncrement = None, timeInc
           if splitSessions: treatmentDataSecondPart += trialDataSecondPart
 
         if summarizeIncrement != None:
-          incrementFile.write("\n".join([",".join(map(str, rowData)) for rowData in squareTranspose(treatmentIncrementData, "")]))
+          rows = squareTranspose(treatmentIncrementData, "")
+          rowSEs   = [stderr(list(filter(lambda sample: sample != "", row))) for row in rows]
+          rowMeans = [safeAverage(list(filter(lambda sample: sample != "", row))) for row in rows]
+          rowsWithStats = [row + [rowSE, rowMean] for (row, rowSE, rowMean) in zip(rows, rowSEs, rowMeans)]
+          incrementFile.write("\n".join([",".join(map(str, rowData)) for rowData in rowsWithStats]))
           #if not splitSessions:
           #  incrementFile.write("\n".join([",".join(map(str, rowData)) for rowData in transpose(treatmentIncrementData)]))
           #else:
@@ -516,6 +587,48 @@ def samplesCurveRatios(samples):
 def samplesCurveRatio(samples):
   return safeAverage(samplesCurveRatios(samples))
 
+def numberOfPausesList(samples):
+  return [numberOfPauses(samples)]
+
+def numberOfPauses(samples):
+  pauseCount = 0
+  pauseStart = 0
+  pausing = False
+  for sample in samples:
+    sp = sample.speed
+    if not pausing and sp < speedThreshold:
+      pausing = True
+      pauseStart = sample.time
+
+    if pausing and sp >= speedThreshold:
+      pausing = False
+      if sample.time - pauseStart < pauseThreholdHigh:
+        pauseCount += 1
+
+  return pauseCount
+
+def averageTimeWalking(samples):
+  if len(samples) == 0:return 0
+  pausing = False
+  walkStartTime = samples[0].time
+  walkTimes = []
+  for sample in samples:
+    sp = sample.speed
+    if not pausing and sp < speedThreshold:
+      pausing = True
+      pauseStartTime = sample.time
+      walkTimes.append(sample.time - walkStartTime)
+
+    if pausing and sp >= speedThreshold:
+      walkStartTime = sample.time
+      pausing = False
+
+  return safeAverage(walkTimes)
+
+def averageTimeWalkingList(samples):
+  return [averageTimeWalking(samples)]
+
+
 def postprocess():
   #Data sets for R statistics
 
@@ -527,30 +640,66 @@ def postprocess():
   print("shortestRecordingTime c = " + str(lengthDict["c"]))
 
   #Data sets for graphing
-  #TODO deal with including shortestRecordingTime 
+
   print("avgSpeed")
-  makeDataSets("avgSpeed",  safeAverage, getSpeeds, summarizeIncrement = averageSpeed, timeCutoffs = lengthDict, splitSessions = False, units="mm/second")
+  #makeDataSets("avgSpeed",  safeAverage, getSpeeds, summarizeIncrement = averageSpeed, timeCutoffs = lengthDict, splitSessions = False, units="mm/second", timeIncrement = 60*5)
+  #makeDataSets("avgSpeed",  safeAverage, getSpeeds, summarizeIncrement = averageSpeed, timeCutoffs = lengthDict, splitSessions = False, units="mm/second", timeIncrement=300)
   #print("avgSpeed split")
   #makeDataSets("avgSpeed",  safeAverage, getSpeeds, summarizeIncrement = averageSpeed, timeCutoffs = lengthDict, splitSessions = True, units="mm/second")
 
-  print("avgSpeed walking")
-  makeDataSets("avgSpeedWalking",  safeAverage, getSpeedsWalking, summarizeIncrement = averageSpeedWalking, timeCutoffs = lengthDict, splitSessions = False, units="mm/second")
+  print("Number of Pauses")
+  #makeDataSets("numberOfPauses", first, numberOfPausesList, summarizeIncrement = numberOfPauses, timeCutoffs = lengthDict, splitSessions = False, units="count", timeIncrement = 60*5)
+
+  #print("avgSpeed walking")
+  #makeDataSets("avgSpeedWalking",  safeAverage, getSpeedsWalking, summarizeIncrement = averageSpeedWalking, timeCutoffs = lengthDict, splitSessions = False, units="mm/second", timeIncrement = 60*5)
   #print("avgSpeed walking split")
   #makeDataSets("avgSpeedWalking",  safeAverage, getSpeedsWalking, summarizeIncrement = averageSpeedWalking, timeCutoffs = lengthDict, splitSessions = True, units="mm/second")
 
+  #print("total distance")
+  #makeDataSets("totalDist_mm", sum, getDistances, summarizeIncrement = totalDistance, timeCutoffs = lengthDict, units="mm", splitSessions=False)
+
   print("total distance")
-  makeDataSets("totalDist_mm", sum, getDistances, summarizeIncrement = totalDistance, timeCutoffs = lengthDict, units="mm", splitSessions=False)
-  #print("total distance split")
-  #makeDataSets("totalDist_mm", sum, getDistances, summarizeIncrement = totalDistance, timeCutoffs = lengthDict, units="mm", splitSessions=True)
+  makeDataSets("totalDist_mm", sum, getDistances, summarizeIncrement = totalDistance,
+               timeCutoffs = lengthDict, units="mm", splitSessions=False, timeIncrement=60*5)
+
+  makeDataSets("log_totalDist_mm", sum, getDistances, summarizeIncrement = totalDistance,
+               timeCutoffs = lengthDict, units="mm", splitSessions=False, timeIncrement=60*5, transformation=logTransformation)
+
+  makeDataSets("adjusted_totalDist_mm", sum, getDistances, summarizeIncrement = totalDistance,
+               timeCutoffs = lengthDict, units="mm", splitSessions=False, timeIncrement=60*5, adjustForLength=True)
+
+  makeDataSets("log_adjusted_totalDist_mm", sum, getDistances, summarizeIncrement = totalDistance,
+               timeCutoffs = lengthDict, units="mm", splitSessions=False, timeIncrement=60*5, transformation=logTransformation, adjustForLength=True)
+
+  makeDataSets("offset_totalDist_mm", sum, getDistances, summarizeIncrement = totalDistance,
+               timeCutoffs = lengthDict, units="mm", splitSessions=False, timeIncrement=60*5, subtractIndividualOffset=True)
+
+  makeDataSets("log_offset_totalDist_mm", sum, getDistances, summarizeIncrement = totalDistance,
+               timeCutoffs = lengthDict, units="mm", splitSessions=False, timeIncrement=60*5, transformation=logTransformationWithOffset(7000), subtractIndividualOffset=True)
+
+  print("Average Time Walking")
+  #makeDataSets("avgTimeWalking", first, averageTimeWalkingList, summarizeIncrement = averageTimeWalking, timeCutoffs = lengthDict, units="seconds", splitSessions=False, timeIncrement=60*5)
 
   #makeDataSets("straightness",  safeAverage, samplesCurveRatios, summarizeIncrement = samplesCurveRatio, timeCutoffs = lengthDict, splitSessions = False, units="ratio")
-  makeDataSets("averagePauseDuration_" + str(30) + "seconds",  safeAverage, pauseDurationWith(30), summarizeIncrement = averageTimePaused, timeCutoffs = lengthDict, units="mm/second")
-  makeDataSets("averagePauseDuration_" + str(60) + "seconds",  safeAverage, pauseDurationWith(60), summarizeIncrement = averageTimePaused, timeCutoffs = lengthDict, units="mm/second")
-  #makeDataSets("percentstandingstill", first, percentStillList, summarizeIncrement = percentStill, timeCutoffs = lengthDict, units="percent")
-  #makeDataSets("percentTimeMiddle", first, percentMiddleList, summarizeIncrement = percentMiddle, timeCutoffs = lengthDict, units="percent")
+  #makeDataSets("averagePauseDuration_" + str(20) + "seconds",  safeAverage, pauseDurationWith(20), summarizeIncrement = averageTimePaused, timeCutoffs = lengthDict, units="mm/second", timeIncrement = 60*5)
+  #makeDataSets("averagePauseDuration_" + str(60) + "seconds",  safeAverage, pauseDurationWith(60), summarizeIncrement = averageTimePaused, timeCutoffs = lengthDict, units="mm/second")
+
+  print("percentstandingstill")
+  #makeDataSets("percentstandingstill", first, percentStillList, summarizeIncrement = percentStill, timeCutoffs = lengthDict, units="percent", timeIncrement = 60*5)
+
+  print("percentTimeMiddle")
+  #makeDataSets("percentTimeMiddle", first, percentMiddleList, summarizeIncrement = percentMiddle, timeCutoffs = lengthDict, units="percent", timeIncrement = 60*5)
+
+  print("avgAcceleration")
+  #makeDataSets("avgAcceleration", first, avgAccList, summarizeIncrement = avgAcc, timeCutoffs = lengthDict, units="percent", timeIncrement = 60*5)
 
   #not sure if this can be made to work
   #makeDataSets("averageForwardDirectiveness",  forwardDirectivenessRatio, distances)
 
 if __name__ == "__main__":
+  if len(sys.argv) > 1:
+    outDatasetPath = sys.argv[1]
+
+  print("Writing data to: " + outDatasetPath)
   postprocess()
+  print("Finished Processing")

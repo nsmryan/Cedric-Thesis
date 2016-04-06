@@ -5,46 +5,61 @@ from enum import Enum
 outDir = "output"
 inDir = "input"
 
-#ignoreTrials = [
-                #"Trial 9",
-                #"Trial 10",
-                #"Trial 11",
-                #"Trial 12"
-#               ]
+ignoreTrials = [
+                "Trial 1",
+                "Trial 2",
+                "Trial 3",
+                "Trial 4"
+               ]
 
 ignoreCrayfish = [
                   ("Trial 4", "a", 4),
+				  ("Trial 4", "b", 4),
+				  ("Trial 4", "c", 4),
+				  
+				  ("Trial 5", "a", 5),
                   ("Trial 5", "b", 5),
-                  ("Trial 5", "c", 2),
+				  ("Trial 5", "c", 5),
+				  
+				  #("Trial 5", "a", 2),
+                  #("Trial 5", "b", 2),
+                  #("Trial 5", "c", 2),
+				  
                   ("Trial 6", "a", 1),
                   ("Trial 6", "b", 1),
-                  ("Trial 7", "b", 2),
+				  ("Trial 6", "c", 1),
+				  
+                  #("Trial 7", "a", 2),
+				  #("Trial 7", "b", 2),
+				  #("Trial 7", "c", 2),
+				  
+				  ("Trial 7", "a", 5),
+				  ("Trial 7", "b", 5),
                   ("Trial 7", "c", 5),
+				  
                   ("Trial 9", "a", 4),
-                                    
-                  ("Trial 5", "a", 2),
-                  ("Trial 5", "b", 2),
-                  ("Trial 5", "c", 2),
-                                    
+				  ("Trial 9", "b", 4),
+				  ("Trial 9", "c", 4),
+				  
                   ("Trial 8", "a", 4),
                   ("Trial 8", "b", 4),
                   ("Trial 8", "c", 4),
 
-                  ("Trial 9", "a", 6),
-                  ("Trial 9", "b", 6),
-                  ("Trial 9", "c", 6),
+                  #("Trial 9", "a", 6),
+                  #("Trial 9", "b", 6),
+                  #("Trial 9", "c", 6),
 
-                  ("Trial 10", "a", 3),
-                  ("Trial 10", "b", 3),
-                  ("Trial 10", "c", 3),
+                  #("Trial 10", "a", 3),
+                  #("Trial 10", "b", 3),
+                  #("Trial 10", "c", 3),
 
-                  ("Trial 11", "a", 3),
-                  ("Trial 11", "b", 3),
-                  ("Trial 11", "c", 3),
+                  #("Trial 11", "a", 3),
+                  #("Trial 11", "b", 3),
+                  #("Trial 11", "c", 3),
 
-                  ("Trial 11", "a", 6),
-                  ("Trial 11", "b", 6),
-                  ("Trial 11", "c", 6)
+                  #("Trial 11", "a", 6),
+                  #("Trial 11", "b", 6),
+                  #("Trial 11", "c", 6)
                  ]
 
 runFiltering = True
@@ -57,10 +72,10 @@ numFields = 6 # 6 fields per crayfish
 
 numCrayfish = 6 # 6 crayfish per dataset
 
-crayfishHeader = "time (seconds), x (mm), y (mm), x velocity (mm/second), y velocity (mm/second), rotation (degrees), length (mm), width (mm), location, speed (mm/second)\n"
+crayfishHeader = "time (seconds), x (mm), y (mm), x velocity (mm/second), y velocity (mm/second), rotation (degrees), length (mm), width (mm), speed (mm/second), location\n"
 
 speedThreshold = 1
-pauseThreholdHigh = 30
+pauseThreholdHigh = 20
 
 #mmPerPixelX = 127/276
 #mmPerPixelY = 76/164
@@ -267,6 +282,19 @@ def safeAverage(nums):
   if len(nums) == 0:return 0
   return sum(nums)/len(nums)
 
+def safeDivide(num, dem):
+  result = 0
+  if dem != 0:
+    result = num/dem
+  return result
+
+def safeLog(x):
+  if x == 0:
+    result = math.log(0.001)
+  else:
+    result = math.log(x)
+  return result
+
 def joinLists(lls):
   l = []
   for ls in lls:
@@ -373,18 +401,18 @@ cameras = {"Trial 1"  : camera3,
            "Trial 11" : camera2,
            "Trial 12" : camera3}
 
-crayfishLengths = {"Trial 1"  : [1.5, 1.6, 1.8, 1.5, 1.5, 1.4],
-                   "Trial 2"  : [1.4, 1.8, 1.6, 1.6, 1.5, 1.5],
-                   "Trial 3"  : [1.6, 1.5, 1.5, 1.5, 1.6, 1.8],
-                   "Trial 4"  : [1.5, 1.6, 1.4, 1.5, 1.6, 1.6],
-                   "Trial 5"  : [1.6, 1.3, 1.6, 1.4, 1.6, 1.4],
-                   "Trial 6"  : [1.8, 1.5, 1.6, 1.4, 1.4, 1.5],
-                   "Trial 7"  : [1.6, 1.8, 1.5, 1.7, 1.6, 1.8],
-                   "Trial 8"  : [1.5, 1.6, 1.8, 1.8, 1.8, 1.6],
-                   "Trial 9"  : [2.1, 2.3, 2.3, 2.8, 2.9, 2.7],
-                   "Trial 10" : [2.5, 2.4, 2.0, 2.3, 2.5, 2.7],
-                   "Trial 11" : [2.4, 2.2, 2.3, 2.3, 2.3, 2.5],
-                   "Trial 12" : [2.4, 2.1, 2.1, 2.3, 2.3, 2.3]}
+crayfishLengths = {"Trial 1"  : [15.0, 16.0, 18.0, 15.0, 15.0, 14.0],
+                   "Trial 2"  : [14.0, 18.0, 16.0, 16.0, 15.0, 15.0],
+                   "Trial 3"  : [16.0, 15.0, 15.0, 15.0, 16.0, 18.0],
+                   "Trial 4"  : [15.0, 16.0, 14.0, 15.0, 16.0, 16.0],
+                   "Trial 5"  : [16.0, 13.0, 16.0, 14.0, 16.0, 14.0],
+                   "Trial 6"  : [18.0, 15.0, 16.0, 14.0, 14.0, 15.0],
+                   "Trial 7"  : [16.0, 18.0, 15.0, 17.0, 16.0, 18.0],
+                   "Trial 8"  : [15.0, 16.0, 18.0, 18.0, 18.0, 16.0],
+                   "Trial 9"  : [21.0, 23.0, 23.0, 28.0, 29.0, 27.0],
+                   "Trial 10" : [25.0, 24.0, 20.0, 23.0, 25.0, 27.0],
+                   "Trial 11" : [24.0, 22.0, 23.0, 23.0, 23.0, 25.0],
+                   "Trial 12" : [24.0, 21.0, 21.0, 23.0, 23.0, 23.0]}
 
 motherIds = [5, 8, 11]
 
